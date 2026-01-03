@@ -3,12 +3,12 @@ import pandas as pd
 import plotly.express as px
 import re
 import os
-from openai import OpenAI  # 直接导入，云端会自动根据 requirements.txt 安装
+from openai import OpenAI
 
 # ==========================================
 # 0. 全局配置
 # ==========================================
-st.set_page_config(page_title="TK选品 (DeepSeek云端版)", page_icon="🚀", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="TK选品 (DeepSeek Pro版)", page_icon="🚀", layout="wide", initial_sidebar_state="expanded")
 
 # --- CSS 样式 ---
 st.markdown("""
@@ -19,16 +19,18 @@ st.markdown("""
     .stButton > button { background-color: #5856D6 !important; color: white !important; border-radius: 12px; border: none; padding: 10px 24px; font-weight: 600; }
     .stButton > button:hover { background-color: #4A48C5 !important; }
     .analysis-room { border: 2px solid #5856D6 !important; background-color: #fff !important; animation: pulse 1s ease-in-out; }
-    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(88, 86, 214, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(88, 86, 214, 0); } 100% { box-shadow: 0 0 0 0 rgba(88, 86, 214, 0); } }
     .score-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-weight: bold; font-size: 14px; margin-left: 10px; }
     .score-s { background-color: #FFD700; color: #8B4500 !important; } 
-    .score-a { background-color: #E5E5EA; color: #333 !important; }   
+    .score-a { background-color: #E5E5EA; color: #333 !important; }
+    /* 优化代码块显示，方便复制 */
+    .stCodeBlock { border-radius: 8px !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # --- 状态管理 ---
 if 'selected_product_title' not in st.session_state: st.session_state.selected_product_title = None
 if 'user_role' not in st.session_state: st.session_state.user_role = 'guest'
+if 'gen_keywords' not in st.session_state: st.session_state.gen_keywords = "" # 新增：存储关键词
 if 'gen_title' not in st.session_state: st.session_state.gen_title = ""
 if 'gen_desc' not in st.session_state: st.session_state.gen_desc = ""
 
@@ -78,19 +80,14 @@ def calculate_score(row, max_gmv):
     elif score_val >= 5: return "B", "⚖️ 稳健出单 (B级)", "score-a"
     else: return "C", "🌱 起步阶段 (C级)", "score-a"
 
-def basic_optimize_title(original_title):
-    words = str(original_title).split()
-    short_title = " ".join(words[:8])
-    return f"🔥 {short_title} ✨ #MustHave"
-
-# 🔥 DeepSeek 流式生成函数
-def stream_ai_response(client, prompt, placeholder_obj):
+# 🔥 DeepSeek 流式生成函数 (支持自定义温度)
+def stream_ai_response(client, prompt, placeholder_obj, temp=1.3):
     try:
         stream = client.chat.completions.create(
-            model="deepseek-chat",  
+            model="deepseek-chat", # 这里使用的是 V3 模型，性价比最高
             messages=[{"role": "user", "content": prompt}],
             stream=True,
-            temperature=1.3 
+            temperature=temp 
         )
         full_text = ""
         for chunk in stream:
@@ -101,7 +98,11 @@ def stream_ai_response(client, prompt, placeholder_obj):
         placeholder_obj.markdown(full_text)
         return full_text
     except Exception as e:
-        err_msg = f"❌ AI 请求失败: {str(e)}"
+        err_str = str(e)
+        if "Insufficient Balance" in err_str or "402" in err_str:
+            err_msg = "❌ 余额不足 (Error 402): 请去 DeepSeek 官网充值 (只需几块钱)。"
+        else:
+            err_msg = f"❌ AI 请求失败: {err_str}"
         placeholder_obj.error(err_msg)
         return err_msg
 
@@ -111,7 +112,7 @@ def stream_ai_response(client, prompt, placeholder_obj):
 if os.path.exists("avatar.png"):
     c1, c2, c3 = st.sidebar.columns([1, 2, 1])
     with c2: st.image("avatar.png", width=110)
-st.sidebar.markdown("<h3 style='text-align: center; margin-top: -10px;'>TK选品 (DeepSeek版)</h3>", unsafe_allow_html=True)
+st.sidebar.markdown("<h3 style='text-align: center; margin-top: -10px;'>TK选品 (DeepSeek Pro)</h3>", unsafe_allow_html=True)
 st.sidebar.markdown("---")
 
 client = None
@@ -132,16 +133,15 @@ with st.sidebar.expander("🔑 API 设置 (访客专用)", expanded=False):
     manual_key = st.text_input("请输入 DeepSeek API Key", type="password")
     if manual_key: active_api_key = manual_key
 
+# 🔥 新增：AI 创造力控制
+ai_temp = st.sidebar.slider("🌡️ AI 脑洞/创造力 (Temperature)", 0.5, 1.8, 1.3, step=0.1, help="数值越大越有创意，数值越小越严谨")
+
 if active_api_key:
     try:
-        # ✅ 配置 DeepSeek (直连模式)
-        client = OpenAI(
-            api_key=active_api_key, 
-            base_url="https://api.deepseek.com"
-        )
+        client = OpenAI(api_key=active_api_key, base_url="https://api.deepseek.com")
         is_ai_ready = True
         if st.session_state.user_role != 'admin':
-            st.sidebar.success("✅ DeepSeek 引擎就绪")
+            st.sidebar.success("✅ DeepSeek V3 引擎就绪")
     except Exception as e:
         st.sidebar.error(f"Key 错误: {e}")
 
@@ -187,7 +187,7 @@ if uploaded_file:
     # ==========================================
     # 4. 主界面
     # ==========================================
-    st.title("🚀 TK选品分析 (DeepSeek 直连版)")
+    st.title("🚀 TK选品分析 (DeepSeek Pro)")
     
     m1, m2, m3, m4 = st.columns(4)
     avg_price = filtered_df['Clean_Price'].mean()
@@ -218,6 +218,10 @@ if uploaded_file:
                 """, unsafe_allow_html=True)
                 if st.button(f"🔍 分析这款", key=f"btn_top_{i}", use_container_width=True):
                     st.session_state.selected_product_title = row[col_name]
+                    # 清空之前的缓存，保证新产品重新生成
+                    st.session_state.gen_keywords = ""
+                    st.session_state.gen_title = ""
+                    st.session_state.gen_desc = ""
                     st.rerun()
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -242,6 +246,11 @@ if uploaded_file:
     current_product = None
     if selection.selection["rows"]:
         current_product = filtered_df.sort_values('GMV', ascending=False).iloc[selection.selection["rows"][0]]
+        # 如果切换了产品，清空缓存
+        if st.session_state.selected_product_title != current_product[col_name]:
+            st.session_state.gen_keywords = ""
+            st.session_state.gen_title = ""
+            st.session_state.gen_desc = ""
         st.session_state.selected_product_title = current_product[col_name]
     elif st.session_state.selected_product_title:
         match = filtered_df[filtered_df[col_name] == st.session_state.selected_product_title]
@@ -280,44 +289,82 @@ if uploaded_file:
 
         with c_right:
             st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-            st.subheader("🤖 AI 运营助手 (DeepSeek V3)")
+            st.subheader("🤖 AI 运营助手 (V3)")
             
-            tab1, tab2 = st.tabs(["文案优化", "视频脚本"])
+            tab1, tab2 = st.tabs(["核心文案 (SEO & 卖点)", "视频脚本"])
             
             with tab1:
-                orig_name = st.text_input("原标题", value=str(current_product[col_name]))
-                keywords = st.text_input("关键词 (输入后请按回车!)", placeholder="MustHave, Gift", key="kw_in")
+                orig_name = str(current_product[col_name])
+                st.caption(f"原标题: {orig_name[:50]}...")
                 
-                # 1. 标题生成
-                if st.button("🚀 生成标题"):
-                    if is_ai_ready and keywords:
-                        prompt = f"Act as TikTok SEO expert. Optimize title: {orig_name}. Keywords: {keywords}. English only. Under 100 chars."
-                        placeholder = st.empty() 
-                        st.session_state.gen_title = stream_ai_response(client, prompt, placeholder)
-                    elif not keywords: st.warning("⚠️ 请输入关键词并按回车")
-                    else: st.session_state.gen_title = basic_optimize_title(orig_name); st.caption("普通模式生成")
+                # --- 步骤 0: 关键词提取 ---
+                if st.button("🔍 0. 智能提炼关键词 (One-Click)"):
+                    if is_ai_ready:
+                        prompt_kw = f"As a TikTok SEO expert, extract 5-8 high-traffic, relevant English keywords from this product title: '{orig_name}'. Output ONLY the keywords separated by commas, no other text."
+                        placeholder_kw = st.empty()
+                        res = stream_ai_response(client, prompt_kw, placeholder_kw, temp=1.0)
+                        st.session_state.gen_keywords = res
+                    else: st.warning("请检查 API Key")
+                
+                # 显示关键词 (代码块格式方便复制)
+                keywords_in = st.text_input("关键词 (可手动修改)", value=st.session_state.gen_keywords, placeholder="点击上方按钮自动生成...")
+                if st.session_state.gen_keywords:
+                    st.caption("👇 点击右上角复制按钮：")
+                    st.code(st.session_state.gen_keywords, language="text")
+
+                st.markdown("---")
+                
+                # --- 步骤 1: 标题生成 ---
+                if st.button("🚀 1. 生成裂变 SEO 标题"):
+                    if is_ai_ready and keywords_in:
+                        # 优化后的 Prompt
+                        prompt_title = f"""
+                        Act as a TikTok Shop copywriter. Create ONE optimized product title based on: "{orig_name}".
+                        Target Keywords: {keywords_in}.
+                        Rules:
+                        1. Length: Keep it between 40-80 characters (Mobile optimized).
+                        2. Structure: [Adjective/Hook] + [Core Product Name] + [Benefit/Feature] + [Emoji].
+                        3. Goal: High Click-Through Rate (CTR) and SEO friendly.
+                        4. Output ONLY the title, no explanations.
+                        """
+                        placeholder_t = st.empty() 
+                        st.session_state.gen_title = stream_ai_response(client, prompt_title, placeholder_t, temp=ai_temp)
+                    elif not keywords_in: st.warning("请先提取或输入关键词！")
+                    else: st.warning("API 未连接")
                 
                 if st.session_state.gen_title:
                     st.info(f"结果: {st.session_state.gen_title}")
 
                 st.markdown("---")
-                # 2. 描述生成
-                if st.button("📝 生成描述"):
-                    if is_ai_ready and keywords:
-                        prompt = f"Write a product description for {st.session_state.gen_title}. Keywords: {keywords}. Tone: Exciting. Format: Plain text. 200 words."
-                        placeholder = st.empty()
-                        st.session_state.gen_desc = stream_ai_response(client, prompt, placeholder)
-                    else: st.warning("需要 DeepSeek API Key")
+                
+                # --- 步骤 2: 描述生成 ---
+                if st.button("📝 2. 生成高转化描述 (不凑字数)"):
+                    if is_ai_ready and st.session_state.gen_title:
+                        # 优化后的描述 Prompt - 黄金法则
+                        prompt_desc = f"""
+                        Write a high-converting TikTok Shop product description for: "{st.session_state.gen_title}".
+                        Keywords: {keywords_in}.
+                        Structure (Strictly follow this):
+                        1. **Hook**: A short, punchy sentence to grab attention.
+                        2. **Pain Point & Solution**: Relate to a user problem and how this solves it.
+                        3. **Key Features**: 3-4 bullet points highlighting benefits (not just specs).
+                        4. **CTA**: Clear Call to Action (e.g., "Grab yours now!").
+                        Tone: Authentic, Exciting, Viral. English only. 
+                        Length: Concise, about 150-250 words. Do not write fluff.
+                        """
+                        placeholder_d = st.empty()
+                        st.session_state.gen_desc = stream_ai_response(client, prompt_desc, placeholder_d, temp=ai_temp)
+                    elif not st.session_state.gen_title: st.warning("请先生成标题！")
 
             with tab2:
                 # 3. 脚本生成
-                if st.button("🎬 生成脚本"):
-                    if is_ai_ready and keywords:
+                if st.button("🎬 生成爆款脚本"):
+                    if is_ai_ready and keywords_in:
                         target = st.session_state.gen_title if st.session_state.gen_title else orig_name
-                        prompt = f"Write a TikTok video script for: {target}. Keywords: {keywords}. Include Hook, Scenes, CTA."
-                        placeholder = st.empty()
-                        stream_ai_response(client, prompt, placeholder)
-                    else: st.warning("需要 DeepSeek API Key")
+                        prompt_script = f"Write a TikTok video script for: {target}. Keywords: {keywords_in}. Style: User Generated Content (UGC) feel. Include: Visual Hook (0-3s), Problem Agitation, Product Demo, Social Proof, CTA."
+                        placeholder_s = st.empty()
+                        stream_ai_response(client, prompt_script, placeholder_s, temp=ai_temp)
+                    else: st.warning("请先设置关键词")
 
             st.markdown('</div>', unsafe_allow_html=True)
 
