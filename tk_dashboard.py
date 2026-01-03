@@ -4,7 +4,7 @@ import plotly.express as px
 import re
 import os
 import random
-from collections import Counter
+import google.generativeai as genai
 
 # ==========================================
 # 0. 全局配置
@@ -78,8 +78,8 @@ st.markdown("""
         font-size: 14px;
         margin-left: 10px;
     }
-    .score-s { background-color: #FFD700; color: #8B4500 !important; } /* 金色 S级 */
-    .score-a { background-color: #E5E5EA; color: #333 !important; }   /* 灰色 A级 */
+    .score-s { background-color: #FFD700; color: #8B4500 !important; } 
+    .score-a { background-color: #E5E5EA; color: #333 !important; }   
 </style>
 """, unsafe_allow_html=True)
 
@@ -109,7 +109,7 @@ def check_password():
 if not check_password(): st.stop()
 
 # ==========================================
-# 1. 核心工具函数
+# 1. 核心工具函数 (含普通版 + AI版)
 # ==========================================
 def clean_currency(val):
     if pd.isna(val): return 0
@@ -122,33 +122,59 @@ def clean_currency(val):
     return 0
 
 def calculate_score(row, max_gmv):
-    """计算机会评分 (S/A/B/C)"""
     score_val = (row['GMV'] / max_gmv) * 100
     if score_val >= 50: return "S", "🔥 顶级爆款 (S级)", "score-s"
     elif score_val >= 20: return "A", "🚀 潜力热销 (A级)", "score-a"
     elif score_val >= 5: return "B", "⚖️ 稳健出单 (B级)", "score-a"
     else: return "C", "🌱 起步阶段 (C级)", "score-a"
 
-def optimize_title(original_title):
+# --- [普通模式] 机械生成 (不花钱，不需要Key) ---
+def basic_optimize_title(original_title):
     remove_list = ['pcs', 'set', 'for', 'women', 'men', 'sale', 'hot', 'new', '2025', 'high quality']
-    words = original_title.split()
+    words = str(original_title).split()
     clean_words = [w for w in words if w.lower() not in remove_list]
     short_title = " ".join(clean_words[:8])
     emojis = ['🔥', '✨', '💖', '🎁', '🚀', '⭐']
     tags = ['#TikTokMadeMeBuyIt', '#fyp', '#Trending', '#MustHave']
     return f"{random.choice(emojis)} {short_title} {random.choice(emojis)}\n\n{random.choice(tags)} {random.choice(tags)}"
 
-def generate_script(title, price):
+def basic_generate_script(title, price):
     hooks = ["Stop scrolling! 🛑", "Changed my life! 😱", "Best find under $50! 🔥"]
-    return f"**[0-3s Hook]**: {random.choice(hooks)}\n**[3-15s Demo]**: Look at this... High quality and easy to use.\n**[CTA]**: Grab yours for only ${price:.2f}!"
+    return f"**[Hook]**: {random.choice(hooks)}\n**[Demo]**: Look at this {title}... High quality!\n**[CTA]**: Grab yours for only ${price}!"
+
+# --- [AI 模式] Gemini 调用 ---
+def get_gemini_response(prompt, api_key):
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-1.5-flash') 
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"AI Error: {e}"
 
 # ==========================================
-# 2. 数据处理
+# 2. 数据处理与侧边栏
 # ==========================================
 if os.path.exists("avatar.png"):
     c1, c2, c3 = st.sidebar.columns([1, 2, 1])
     with c2: st.image("avatar.png", width=110)
 st.sidebar.markdown("<h3 style='text-align: center; margin-top: -10px;'>TK选品分析青春版</h3>", unsafe_allow_html=True)
+
+# --- 侧边栏：API Key 输入区 ---
+st.sidebar.markdown("---")
+with st.sidebar.expander("🔑 AI 高级功能开关", expanded=True):
+    st.caption("输入 Key 开启智能模式；不填则使用普通模式（免费）。")
+    # 获取用户输入的Key
+    user_api_key = st.text_input("Gemini API Key", type="password", key="user_custom_api_key", help="以 AIza 开头")
+
+# ⚠️ 关键逻辑：只有当用户填了 Key，才视为开启 AI 模式
+is_ai_mode = False
+if user_api_key:
+    is_ai_mode = True
+    st.sidebar.success("✅ AI 模式已激活")
+else:
+    st.sidebar.info("🍃 普通模式 (省流版)")
+
 st.sidebar.markdown("---")
 
 uploaded_file = st.sidebar.file_uploader("📂 上传 Kalodata/EchoTik 表格", type=["xlsx", "csv"])
@@ -206,7 +232,7 @@ if uploaded_file:
     m4.metric("最高单品销量", f"{filtered_df['Clean_Sales'].max():,.0f}")
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 2. Top 3 推荐 (点击触发)
+    # 2. Top 3 推荐
     st.subheader("🔥 今日 Top 3 推荐")
     top_3_df = filtered_df.sort_values('GMV', ascending=False).head(3)
     if len(top_3_df) >= 3:
@@ -232,7 +258,7 @@ if uploaded_file:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 3. 柱状图 (支持点击！)
+    # 3. 柱状图
     with st.container():
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.subheader("📊 畅销品销量排行 (点击柱子查看分析)")
@@ -259,7 +285,7 @@ if uploaded_file:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 4. 精品清单 (点击跳转)
+    # 4. 精品清单
     st.subheader("📋 所有商品清单 (点击行 -> 自动跳转分析室)")
     display_cols = [col_name, 'Clean_Price', 'Clean_Sales', 'GMV']
     if has_image: display_cols.insert(0, 'Image_Url')
@@ -278,7 +304,7 @@ if uploaded_file:
         on_select="rerun", selection_mode="single-row"
     )
 
-# 5. 选品逻辑
+    # 5. 选品逻辑
     current_product = None
     if selection.selection["rows"]:
         selected_index = selection.selection["rows"][0]
@@ -321,7 +347,7 @@ if uploaded_file:
             st.markdown('</div>', unsafe_allow_html=True)
 
         with c_mid:
-            # 2. 利润模拟器 (新增核心功能)
+            # 2. 利润模拟器
             st.markdown('<div class="glass-card">', unsafe_allow_html=True)
             st.subheader("💰 利润模拟器")
             
@@ -345,16 +371,99 @@ if uploaded_file:
             st.markdown('</div>', unsafe_allow_html=True)
 
         with c_right:
-            # 3. AI 运营工具
+            # 3. AI 运营工具 (双模式版)
             st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-            st.subheader("🤖 AI 运营助手")
-            tab1, tab2 = st.tabs(["标题优化", "脚本生成"])
+            if is_ai_mode:
+                st.subheader("🤖 AI 运营助手 (Gemini)")
+            else:
+                st.subheader("🤖 运营助手 (普通版)")
+            
+            # Tabs
+            tab1, tab2 = st.tabs(["标题 & 描述", "脚本生成"])
+            
+            # === TAB 1: 标题 & 描述 ===
             with tab1:
-                if st.button("🚀 生成爆款标题"):
-                    st.code(optimize_title(current_product[col_name]), language="text")
+                st.caption("Step 1: 优化标题")
+                orig_name = st.text_input("原商品名称", value=str(current_product[col_name]), key="orig_input")
+                keywords = st.text_input("核心关键词", placeholder="如: Gift for her, TikTokMadeMeBuyIt", key="kw_input")
+
+                if st.button("🚀 生成优化标题"):
+                    if orig_name:
+                        if is_ai_mode and keywords:
+                            # 模式 A: AI 智能生成
+                            with st.spinner("Gemini 正在思考..."):
+                                title_prompt = f"""
+                                Act as a TikTok Shop SEO Expert for North America.
+                                Task: Create a high-converting product title.
+                                Original Name: {orig_name}
+                                Keywords: {keywords}
+                                Constraint: English only, under 100 characters, no explanations.
+                                """
+                                new_title = get_gemini_response(title_prompt, user_api_key).strip()
+                                st.session_state['generated_title'] = new_title
+                                st.success("AI 优化完成!")
+                        else:
+                            # 模式 B: 普通生成 (不用Key)
+                            new_title = basic_optimize_title(orig_name)
+                            st.session_state['generated_title'] = new_title
+                            if not keywords and is_ai_mode:
+                                st.warning("未输入关键词，已切换回普通模式")
+                            else:
+                                st.info("已生成 (普通模式)")
+
+                # 显示新标题
+                if 'generated_title' in st.session_state:
+                    st.code(st.session_state['generated_title'], language='text')
+                    
+                    st.markdown("---")
+                    st.caption("Step 2: 商品描述")
+                    
+                    if st.button("📝 生成描述"):
+                        if is_ai_mode and keywords:
+                            # 模式 A: AI 智能撰写
+                            with st.spinner("AI 正在撰写..."):
+                                desc_prompt = f"""
+                                Act as a Copywriter. Write a 300-word product description.
+                                Product: {st.session_state['generated_title']}
+                                Keywords: {keywords}
+                                Tone: Exciting, Persuasive, Native English.
+                                Format: Plain text, short paragraphs.
+                                """
+                                desc_result = get_gemini_response(desc_prompt, user_api_key)
+                                st.session_state['gen_desc'] = desc_result
+                        else:
+                            # 模式 B: 这里的普通模式可能就是个简单的模板，或者提示用户无法生成长文
+                            st.warning("⚠️ 普通模式下无法生成 AI 长文描述，请在侧边栏输入 API Key 解锁。")
+                    
+                    # 显示描述
+                    if 'gen_desc' in st.session_state and is_ai_mode:
+                        st.text_area("英文描述:", value=st.session_state['gen_desc'], height=200)
+
+            # === TAB 2: 脚本生成 ===
             with tab2:
-                if st.button("🎥 生成视频脚本"):
-                    st.code(generate_script(current_product[col_name], sell_price), language="markdown")
+                if st.button("🎬 生成脚本"):
+                    target_title = st.session_state.get('generated_title', orig_name)
+                    if is_ai_mode and keywords:
+                         # 模式 A: AI 脚本
+                        with st.spinner("AI 正在编写..."):
+                            script_prompt = f"""
+                            Act as a Viral Video Director. Create a prompt for an AI Video Generator (like Sora/Runway).
+                            Product: {target_title}
+                            Keywords: {keywords}
+                            Output Format:
+                            1. Visual Style
+                            2. Hook
+                            3. Scene Breakdown
+                            4. AI Generation Prompt
+                            """
+                            script_res = get_gemini_response(script_prompt, user_api_key)
+                            st.text_area("复制此内容:", value=script_res, height=300)
+                    else:
+                        # 模式 B: 普通模板脚本
+                        script_res = basic_generate_script(target_title, sell_price)
+                        st.text_area("基础脚本模板:", value=script_res, height=200)
+                        st.caption("💡 提示: 输入 API Key 可生成更专业的 AI 视频指令")
+
             st.markdown('</div>', unsafe_allow_html=True)
             
     else:
