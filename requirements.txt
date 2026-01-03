@@ -1,5 +1,5 @@
 streamlit
 pandas
 plotly
+openai
 openpyxl
-google-generativeai>=0.7.2
