@@ -1,4 +1,26 @@
 import streamlit as st
+import streamlit as st
+
+# --- 密码锁开始 ---
+if 'password_correct' not in st.session_state:
+    st.session_state['password_correct'] = False
+
+def check_password():
+    if st.session_state['password_correct']:
+        return True
+    
+    pwd = st.text_input("🔒 请输入访问密码", type="password")
+    if pwd == "1997":  # 这里改成你想设的密码
+        st.session_state['password_correct'] = True
+        st.rerun()
+        return True
+    elif pwd:
+        st.error("密码错误")
+    return False
+
+if not check_password():
+    st.stop()
+# --- 密码锁结束 ---
 import pandas as pd
 import plotly.express as px
 import re
