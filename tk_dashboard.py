@@ -3,24 +3,14 @@ import pandas as pd
 import plotly.express as px
 import re
 import os
-import random
-import subprocess
-import sys
+from openai import OpenAI  # 直接导入，云端会自动根据 requirements.txt 安装
 
 # ==========================================
-# 0. 全局配置与安装
+# 0. 全局配置
 # ==========================================
-st.set_page_config(page_title="TK选品 (DeepSeek极速版)", page_icon="🚀", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="TK选品 (DeepSeek云端版)", page_icon="🚀", layout="wide", initial_sidebar_state="expanded")
 
-# --- 🛠️ 自动安装 openai 库 ---
-try:
-    from openai import OpenAI
-except ImportError:
-    st.warning("正在安装 OpenAI 库以适配 DeepSeek，请稍候...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "openai"])
-    from openai import OpenAI
-
-# --- CSS 样式 (保持原样) ---
+# --- CSS 样式 ---
 st.markdown("""
 <style>
     .stApp { background-color: #F5F5F7; color: #1D1D1F; }
@@ -93,23 +83,21 @@ def basic_optimize_title(original_title):
     short_title = " ".join(words[:8])
     return f"🔥 {short_title} ✨ #MustHave"
 
-# 🔥 新增：DeepSeek 流式生成函数
+# 🔥 DeepSeek 流式生成函数
 def stream_ai_response(client, prompt, placeholder_obj):
     try:
         stream = client.chat.completions.create(
-            model="deepseek-chat",  # 指定 DeepSeek 模型
+            model="deepseek-chat",  
             messages=[{"role": "user", "content": prompt}],
             stream=True,
-            temperature=1.3 # 稍微提高创造性
+            temperature=1.3 
         )
-        
         full_text = ""
         for chunk in stream:
             if chunk.choices[0].delta.content:
                 content = chunk.choices[0].delta.content
                 full_text += content
-                placeholder_obj.markdown(full_text + "▌") # 打字机光标
-        
+                placeholder_obj.markdown(full_text + "▌") 
         placeholder_obj.markdown(full_text)
         return full_text
     except Exception as e:
@@ -130,7 +118,7 @@ client = None
 active_api_key = None
 is_ai_ready = False
 
-# 管理员自动读 Secrets (支持 DEEPSEEK_API_KEY)
+# 管理员自动读 Secrets
 if st.session_state.user_role == 'admin':
     try:
         if "DEEPSEEK_API_KEY" in st.secrets:
@@ -146,7 +134,7 @@ with st.sidebar.expander("🔑 API 设置 (访客专用)", expanded=False):
 
 if active_api_key:
     try:
-        # ✅ 配置 DeepSeek 客户端 (国内直连，无需代理)
+        # ✅ 配置 DeepSeek (直连模式)
         client = OpenAI(
             api_key=active_api_key, 
             base_url="https://api.deepseek.com"
