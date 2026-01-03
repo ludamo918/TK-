@@ -7,17 +7,18 @@ import random
 import subprocess
 import sys
 
-# === 🛠️ 强制安装补丁 (专治 ModuleNotFoundError) ===
+# ==========================================
+# 0. 强制环境配置 & 代理设置
+# ==========================================
+# 自动安装库
 try:
     import google.generativeai as genai
 except ImportError:
-    # 如果找不到库，就强制安装
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "google-generativeai"])
-    import google.generativeai as genai
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "google-generativeai"])
+        import google.generativeai as genai
+    except: pass
 
-# ==========================================
-# 0. 全局配置
-# ==========================================
 st.set_page_config(
     page_title="TK选品分析青春版",
     page_icon="✨",
@@ -29,32 +30,21 @@ st.set_page_config(
 st.markdown("""
 <style>
     .stApp { background-color: #F5F5F7; color: #1D1D1F; }
-    
-    /* 卡片通用样式 */
     .glass-card, div[data-testid="metric-container"] {
         background-color: #FFFFFF !important;
         border-radius: 18px;
         padding: 24px;
         box-shadow: 0 4px 20px rgba(0,0,0,0.04);
         border: 1px solid rgba(0,0,0,0.02);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
     .glass-card:hover, div[data-testid="metric-container"]:hover {
         transform: translateY(-2px);
         box-shadow: 0 8px 30px rgba(0,0,0,0.08);
     }
-
-    /* 字体与颜色 */
     h1, h2, h3, p, span, div {
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Arial, sans-serif !important;
         color: #1D1D1F !important;
     }
-    div[data-testid="stMetricValue"] { color: #007AFF !important; }
-    
-    /* 侧边栏 */
-    section[data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #E5E5EA; }
-    
-    /* 按钮美化 (紫色系) */
     .stButton > button {
         background-color: #5856D6 !important;
         color: white !important;
@@ -65,47 +55,23 @@ st.markdown("""
         box-shadow: 0 4px 10px rgba(88, 86, 214, 0.2);
     }
     .stButton > button:hover { background-color: #4A48C5 !important; }
-    
-    /* 分析室高亮样式 */
-    .analysis-room {
-        border: 2px solid #5856D6 !important;
-        background-color: #fff !important;
-        animation: pulse 1s ease-in-out;
-    }
-    @keyframes pulse {
-        0% { box-shadow: 0 0 0 0 rgba(88, 86, 214, 0.4); }
-        70% { box-shadow: 0 0 0 10px rgba(88, 86, 214, 0); }
-        100% { box-shadow: 0 0 0 0 rgba(88, 86, 214, 0); }
-    }
-    
-    /* 评分标签 */
-    .score-badge {
-        display: inline-block;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-weight: bold;
-        font-size: 14px;
-        margin-left: 10px;
-    }
+    .score-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-weight: bold; font-size: 14px; margin-left: 10px; }
     .score-s { background-color: #FFD700; color: #8B4500 !important; } 
     .score-a { background-color: #E5E5EA; color: #333 !important; }   
 </style>
 """, unsafe_allow_html=True)
 
 # --- 状态管理 ---
-if 'selected_product_title' not in st.session_state:
-    st.session_state.selected_product_title = None
-if 'user_role' not in st.session_state:
-    st.session_state.user_role = 'guest'
+if 'selected_product_title' not in st.session_state: st.session_state.selected_product_title = None
+if 'user_role' not in st.session_state: st.session_state.user_role = 'guest'
 
 # ==========================================
-# 🔒 团队密码锁 (双重身份版)
+# 🔒 团队密码锁
 # ==========================================
 if 'auth' not in st.session_state: st.session_state.auth = False
 
 def check_password():
     if st.session_state.auth: return True
-    
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
         st.markdown("<br><br>", unsafe_allow_html=True)
@@ -117,9 +83,9 @@ def check_password():
         st.markdown("<h2 style='text-align: center; margin-bottom: 20px;'>🔒 团队登录</h2>", unsafe_allow_html=True)
         pwd = st.text_input("请输入访问密码", type="password", label_visibility="collapsed")
         
-        # --- 身份判断 ---
+        # 密码配置
         GUEST_PWD = "1997"
-        ADMIN_PWD = "20261888" # 管理员密码
+        ADMIN_PWD = "boss888" 
         
         if pwd == GUEST_PWD: 
             st.session_state.auth = True
@@ -169,6 +135,7 @@ def basic_generate_script(title, price):
 
 def get_gemini_response(prompt):
     try:
+        # 使用 1.5 Flash 模型
         model = genai.GenerativeModel('gemini-1.5-flash') 
         response = model.generate_content(prompt)
         return response.text
@@ -176,7 +143,7 @@ def get_gemini_response(prompt):
         return f"AI Error: {e}"
 
 # ==========================================
-# 2. 侧边栏与 API
+# 2. 侧边栏配置 (含网络代理)
 # ==========================================
 if os.path.exists("avatar.png"):
     c1, c2, c3 = st.sidebar.columns([1, 2, 1])
@@ -184,23 +151,29 @@ if os.path.exists("avatar.png"):
 st.sidebar.markdown("<h3 style='text-align: center; margin-top: -10px;'>TK选品分析青春版</h3>", unsafe_allow_html=True)
 st.sidebar.markdown("---")
 
+# --- 🌍 网络代理设置 (本地运行必填) ---
+with st.sidebar.expander("🌍 网络代理 (本地运行必填)", expanded=True):
+    st.caption("如果你在中国且运行报错，请在此填入魔法端口 (如 7890)")
+    proxy_port = st.text_input("代理端口号", placeholder="例如: 7890")
+    
+    if proxy_port:
+        os.environ["HTTP_PROXY"] = f"http://127.0.0.1:{proxy_port}"
+        os.environ["HTTPS_PROXY"] = f"http://127.0.0.1:{proxy_port}"
+        st.success(f"已设置代理: 127.0.0.1:{proxy_port}")
+
 # --- 🚀 智能权限系统 ---
 active_api_key = None
 is_ai_ready = False
 
-# 管理员自动读 Secrets
-if st.session_state.user_role == 'admin':
-    try:
-        if "GEMINI_API_KEY" in st.secrets:
-            active_api_key = st.secrets["GEMINI_API_KEY"]
-            st.sidebar.success(f"👑 管理员模式: AI 已激活")
-    except: pass
-else:
-    st.sidebar.info("👤 访客模式: 使用 AI 需自填 Key")
+# 尝试从 Secrets 读取 (如果你在本地配了文件)
+try:
+    if "GEMINI_API_KEY" in st.secrets:
+        active_api_key = st.secrets["GEMINI_API_KEY"]
+except: pass
 
 # 手动输入覆盖
-with st.sidebar.expander("🔑 API 设置 (访客专用)", expanded=False):
-    manual_key = st.text_input("手动输入 Key", type="password")
+with st.sidebar.expander("🔑 API Key 设置", expanded=False):
+    manual_key = st.text_input("输入 Gemini Key", type="password")
     if manual_key: active_api_key = manual_key
 
 # 配置 Gemini
@@ -208,10 +181,11 @@ if active_api_key:
     try:
         genai.configure(api_key=active_api_key)
         is_ai_ready = True
-        if st.session_state.user_role != 'admin':
-            st.sidebar.success("✅ AI 引擎已就绪 (自定义Key)")
+        st.sidebar.success("✅ AI 引擎已就绪")
     except Exception as e:
         st.sidebar.error(f"Key 配置失败: {e}")
+else:
+    st.sidebar.warning("⚠️ 未配置 Key (仅普通模式)")
 
 st.sidebar.markdown("---")
 
@@ -263,11 +237,11 @@ if uploaded_file:
     avg_price = filtered_df['Clean_Price'].mean()
     m1.metric("筛选池总 GMV", f"${filtered_df['GMV'].sum():,.0f}")
     m2.metric("平均客单价", f"${avg_price:.2f}")
-    m3.metric("潜力爆款数", len(filtered_df))
+    m3.metric("潜力品数", len(filtered_df))
     m4.metric("最高单品销量", f"{filtered_df['Clean_Sales'].max():,.0f}")
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 2. 🔥 Top 3 推荐 (已修复功能)
+    # 2. 🔥 Top 3 推荐
     st.subheader("🔥 今日 Top 3 推荐")
     top_3_df = filtered_df.sort_values('GMV', ascending=False).head(3)
     if len(top_3_df) >= 3:
@@ -292,7 +266,7 @@ if uploaded_file:
                     st.rerun()
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 3. 📊 交互式柱状图 (已修复点击跳转)
+    # 3. 📊 交互式柱状图
     with st.container():
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.subheader("📊 畅销品销量排行 (点击柱子查看分析)")
@@ -309,7 +283,6 @@ if uploaded_file:
                 plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
                 font={'color': '#1D1D1F'}, xaxis_tickangle=-45
             )
-            # 关键：开启点击事件
             selected_points = st.plotly_chart(fig, use_container_width=True, on_select="rerun")
             if selected_points and selected_points['selection']['points']:
                 point_idx = selected_points['selection']['points'][0]['point_index']
@@ -337,7 +310,7 @@ if uploaded_file:
         on_select="rerun", selection_mode="single-row"
     )
 
-    # 选中逻辑 (兼容图表点击和表格点击)
+    # 选中逻辑
     current_product = None
     if selection.selection["rows"]:
         current_product = filtered_df.sort_values('GMV', ascending=False).iloc[selection.selection["rows"][0]]
@@ -368,7 +341,7 @@ if uploaded_file:
             st.markdown('</div>', unsafe_allow_html=True)
 
         with c_mid:
-            # 💰 利润模拟器 (已修复: 恢复可输入计算功能)
+            # 💰 利润模拟器
             st.markdown('<div class="glass-card">', unsafe_allow_html=True)
             st.subheader("💰 利润模拟器")
             sell_price = current_product['Clean_Price']
@@ -389,7 +362,7 @@ if uploaded_file:
             st.markdown('</div>', unsafe_allow_html=True)
 
         with c_right:
-            # 🤖 AI 运营助手 (已修复: 3大功能齐全)
+            # 🤖 AI 运营助手
             st.markdown('<div class="glass-card">', unsafe_allow_html=True)
             st.subheader("🤖 AI 运营助手")
             
@@ -423,7 +396,7 @@ if uploaded_file:
                                 d_prompt = f"Write a 300-word product description for {st.session_state['gen_title']}. Keywords: {keywords}. Tone: Exciting. Format: Plain text."
                                 st.session_state['gen_desc'] = get_gemini_response(d_prompt)
                         else:
-                            st.warning("普通模式无法生成长文，请登录管理员或输入Key")
+                            st.warning("普通模式无法生成长文，请设置网络代理并填入Key")
                     
                     if 'gen_desc' in st.session_state:
                         st.text_area("英文描述:", value=st.session_state['gen_desc'], height=150)
