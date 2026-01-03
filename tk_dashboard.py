@@ -7,23 +7,17 @@ import random
 import subprocess
 import sys
 
-# ==========================================
-# 0. 强制配置：网络代理 & 环境补丁
-# ==========================================
-# 1. 强制设置代理 (针对你的 7890 端口)
-# 这样设置后，Python 代码就能通过你的 VPN 访问 Google 了
-os.environ["HTTP_PROXY"] = "http://127.0.0.1:7890"
-os.environ["HTTPS_PROXY"] = "http://127.0.0.1:7890"
-
-# 2. 自动安装/检查 Google 库 (防止报错)
+# === 🛠️ 强制安装补丁 (专治 ModuleNotFoundError) ===
 try:
     import google.generativeai as genai
 except ImportError:
-    try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "google-generativeai"])
-        import google.generativeai as genai
-    except: pass
+    # 如果找不到库，就强制安装
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "google-generativeai"])
+    import google.generativeai as genai
 
+# ==========================================
+# 0. 全局配置
+# ==========================================
 st.set_page_config(
     page_title="TK选品分析青春版",
     page_icon="✨",
@@ -31,57 +25,114 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CSS 样式美化 ---
+# --- iOS 极简白昼风 CSS ---
 st.markdown("""
 <style>
     .stApp { background-color: #F5F5F7; color: #1D1D1F; }
-    .glass-card { background-color: #FFFFFF; border-radius: 18px; padding: 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.04); margin-bottom: 20px; border: 1px solid rgba(0,0,0,0.02); }
-    .glass-card:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.08); transition: all 0.2s ease; }
     
-    /* 按钮样式 */
-    .stButton > button { background-color: #5856D6; color: white; border-radius: 12px; border: none; padding: 10px 24px; font-weight: 600; }
-    .stButton > button:hover { background-color: #4A48C5; }
+    /* 卡片通用样式 */
+    .glass-card, div[data-testid="metric-container"] {
+        background-color: #FFFFFF !important;
+        border-radius: 18px;
+        padding: 24px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+        border: 1px solid rgba(0,0,0,0.02);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .glass-card:hover, div[data-testid="metric-container"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+    }
+
+    /* 字体与颜色 */
+    h1, h2, h3, p, span, div {
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Arial, sans-serif !important;
+        color: #1D1D1F !important;
+    }
+    div[data-testid="stMetricValue"] { color: #007AFF !important; }
     
-    /* 标签样式 */
-    .score-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-weight: bold; font-size: 14px; margin-left: 10px; }
-    .score-s { background-color: #FFD700; color: #8B4500; } 
-    .score-a { background-color: #E5E5EA; color: #333; }
+    /* 侧边栏 */
+    section[data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #E5E5EA; }
+    
+    /* 按钮美化 (紫色系) */
+    .stButton > button {
+        background-color: #5856D6 !important;
+        color: white !important;
+        border-radius: 12px;
+        border: none;
+        padding: 10px 24px;
+        font-weight: 600;
+        box-shadow: 0 4px 10px rgba(88, 86, 214, 0.2);
+    }
+    .stButton > button:hover { background-color: #4A48C5 !important; }
+    
+    /* 分析室高亮样式 */
+    .analysis-room {
+        border: 2px solid #5856D6 !important;
+        background-color: #fff !important;
+        animation: pulse 1s ease-in-out;
+    }
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(88, 86, 214, 0.4); }
+        70% { box-shadow: 0 0 0 10px rgba(88, 86, 214, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(88, 86, 214, 0); }
+    }
+    
+    /* 评分标签 */
+    .score-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-weight: bold;
+        font-size: 14px;
+        margin-left: 10px;
+    }
+    .score-s { background-color: #FFD700; color: #8B4500 !important; } 
+    .score-a { background-color: #E5E5EA; color: #333 !important; }   
 </style>
 """, unsafe_allow_html=True)
 
 # --- 状态管理 ---
-if 'selected_product_title' not in st.session_state: st.session_state.selected_product_title = None
-if 'user_role' not in st.session_state: st.session_state.user_role = 'guest'
-if 'auth' not in st.session_state: st.session_state.auth = False
+if 'selected_product_title' not in st.session_state:
+    st.session_state.selected_product_title = None
+if 'user_role' not in st.session_state:
+    st.session_state.user_role = 'guest'
 
 # ==========================================
-# 🔒 双重账号安全锁 (你的核心要求)
+# 🔒 团队密码锁 (双重身份版)
 # ==========================================
+if 'auth' not in st.session_state: st.session_state.auth = False
+
 def check_password():
     if st.session_state.auth: return True
+    
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
-        st.markdown("<br><br><div class='glass-card' style='text-align:center'>", unsafe_allow_html=True)
-        if os.path.exists("avatar.png"): st.image("avatar.png", width=80)
-        st.markdown("<h2>🔒 团队登录</h2>", unsafe_allow_html=True)
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown('<div class="glass-card" style="text-align: center;">', unsafe_allow_html=True)
+        if os.path.exists("avatar.png"):
+            img_c1, img_c2, img_c3 = st.columns([1, 1, 1])
+            with img_c2: st.image("avatar.png", width=100)
         
-        pwd = st.text_input("请输入访问密码", type="password")
+        st.markdown("<h2 style='text-align: center; margin-bottom: 20px;'>🔒 团队登录</h2>", unsafe_allow_html=True)
+        pwd = st.text_input("请输入访问密码", type="password", label_visibility="collapsed")
         
-        # --- 身份验证逻辑 ---
-        if pwd == "1997": 
-            # 访客模式：无法自动获取 Key，保护你的额度
+        # --- 身份判断 ---
+        GUEST_PWD = "1997"
+        ADMIN_PWD = "20261888" # 管理员密码
+        
+        if pwd == GUEST_PWD: 
             st.session_state.auth = True
             st.session_state.user_role = 'guest'
             st.rerun()
-        elif pwd == "boss888":
-            # 管理员模式：自动获取 Secrets Key，随便用
+        elif pwd == ADMIN_PWD:
             st.session_state.auth = True
             st.session_state.user_role = 'admin'
             st.rerun()
         elif pwd: 
             st.error("🚫 密码错误")
             
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
     return False
 
 if not check_password(): st.stop()
@@ -92,300 +143,307 @@ if not check_password(): st.stop()
 def clean_currency(val):
     if pd.isna(val): return 0
     s = str(val).strip().lower().replace(',', '')
+    multiplier = 1
+    if 'k' in s: multiplier = 1000; s = s.replace('k', '')
+    if 'w' in s or '万' in s: multiplier = 10000; s = s.replace('w', '').replace('万', '')
     match = re.search(r'(\d+(\.\d+)?)', s)
-    return float(match.group(1)) if match else 0
+    if match: return float(match.group(1)) * multiplier
+    return 0
 
 def calculate_score(row, max_gmv):
-    val = (row['GMV'] / max_gmv) * 100
-    if val >= 50: return "S", "🔥 顶级爆款 (S级)", "score-s"
-    elif val >= 20: return "A", "🚀 潜力热销 (A级)", "score-a"
-    else: return "B", "⚖️ 稳健出单 (B级)", "score-a"
+    score_val = (row['GMV'] / max_gmv) * 100
+    if score_val >= 50: return "S", "🔥 顶级爆款 (S级)", "score-s"
+    elif score_val >= 20: return "A", "🚀 潜力热销 (A级)", "score-a"
+    elif score_val >= 5: return "B", "⚖️ 稳健出单 (B级)", "score-a"
+    else: return "C", "🌱 起步阶段 (C级)", "score-a"
 
 def basic_optimize_title(original_title):
-    return f"🔥 {str(original_title)[:40]}... ✨ #MustHave"
+    remove_list = ['pcs', 'set', 'for', 'women', 'men', 'sale', 'hot', 'new', '2025']
+    words = str(original_title).split()
+    clean_words = [w for w in words if w.lower() not in remove_list]
+    short_title = " ".join(clean_words[:8])
+    return f"🔥 {short_title} ✨ #MustHave"
 
 def basic_generate_script(title, price):
-    return f"**[Hook]**: Stop scrolling!\n**[CTA]**: Only ${price}!"
+    return f"**[Hook]**: Stop scrolling! 🛑\n**[Demo]**: Check out {title}!\n**[CTA]**: Only ${price}!"
 
-# --- Gemini AI 调用核心 (已升级至 2.5-flash) ---
-def get_gemini_response(prompt, api_key):
+def get_gemini_response(prompt):
     try:
-        # 配置 API (使用 REST 协议以兼容代理)
-        genai.configure(api_key=api_key, transport='rest')
-        
-        # ⚠️ 使用你账号支持的最新模型
-        model = genai.GenerativeModel('gemini-2.5-flash') 
-        
+        model = genai.GenerativeModel('gemini-1.5-flash') 
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
         return f"AI Error: {e}"
 
 # ==========================================
-# 2. 侧边栏 & Key 管理
+# 2. 侧边栏与 API
 # ==========================================
-st.sidebar.image("avatar.png", width=110) if os.path.exists("avatar.png") else None
-st.sidebar.title("TK选品分析")
+if os.path.exists("avatar.png"):
+    c1, c2, c3 = st.sidebar.columns([1, 2, 1])
+    with c2: st.image("avatar.png", width=110)
+st.sidebar.markdown("<h3 style='text-align: center; margin-top: -10px;'>TK选品分析青春版</h3>", unsafe_allow_html=True)
 st.sidebar.markdown("---")
 
-# --- Key 智能加载逻辑 ---
+# --- 🚀 智能权限系统 ---
 active_api_key = None
-is_admin = (st.session_state.user_role == 'admin')
+is_ai_ready = False
 
-# 1. 如果是管理员，尝试从 Secrets 自动读取
-if is_admin:
+# 管理员自动读 Secrets
+if st.session_state.user_role == 'admin':
     try:
         if "GEMINI_API_KEY" in st.secrets:
             active_api_key = st.secrets["GEMINI_API_KEY"]
-            st.sidebar.success(f"👑 管理员模式 (Key已加载)")
+            st.sidebar.success(f"👑 管理员模式: AI 已激活")
     except: pass
 else:
-    st.sidebar.info("👤 访客模式 (AI需自填Key)")
+    st.sidebar.info("👤 访客模式: 使用 AI 需自填 Key")
 
-# 2. 手动输入框 (访客必填，管理员可覆盖)
-with st.sidebar.expander("🔑 API Key 设置", expanded=not active_api_key):
-    manual = st.text_input("输入Key (以AIza开头)", type="password")
-    if manual: active_api_key = manual.strip().replace('"', '')
+# 手动输入覆盖
+with st.sidebar.expander("🔑 API 设置 (访客专用)", expanded=False):
+    manual_key = st.text_input("手动输入 Key", type="password")
+    if manual_key: active_api_key = manual_key
 
-# 显示状态
+# 配置 Gemini
 if active_api_key:
-    if not is_admin and not manual:
-        pass # 访客没填Key
-    else:
-        st.sidebar.success("✅ AI 引擎已就绪 (2.5-Flash)")
-else:
-    st.sidebar.warning("⚠️ 未连接 AI")
+    try:
+        genai.configure(api_key=active_api_key)
+        is_ai_ready = True
+        if st.session_state.user_role != 'admin':
+            st.sidebar.success("✅ AI 引擎已就绪 (自定义Key)")
+    except Exception as e:
+        st.sidebar.error(f"Key 配置失败: {e}")
 
 st.sidebar.markdown("---")
-uploaded_file = st.sidebar.file_uploader("📂 上传表格", type=["xlsx", "csv"])
 
 # ==========================================
-# 3. 主程序
+# 3. 文件上传与数据处理
 # ==========================================
+uploaded_file = st.sidebar.file_uploader("📂 上传 Kalodata/EchoTik 表格", type=["xlsx", "csv"])
+
 if uploaded_file:
     try:
-        df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
-    except: st.error("文件错误"); st.stop()
+        if uploaded_file.name.endswith('.csv'): df = pd.read_csv(uploaded_file)
+        else: df = pd.read_excel(uploaded_file)
+    except: st.error("文件格式错误"); st.stop()
 
-    # 字段映射
     cols = list(df.columns)
-    col_name = cols[0] # 默认第一列为标题
-    col_price = next((c for c in cols if 'Price' in c or '价格' in c), cols[1])
-    col_sales = next((c for c in cols if 'Sales' in c or '销量' in c), cols[2])
-    col_img = next((c for c in cols if 'Image' in c or 'Img' in c), None)
+    with st.sidebar.expander("🔧 字段校准", expanded=True):
+        guess_name = next((c for c in cols if 'Title' in c or '名称' in c or 'Name' in c), cols[0])
+        guess_price = next((c for c in cols if 'Price' in c or '价格' in c), cols[1] if len(cols)>1 else cols[0])
+        guess_sales = next((c for c in cols if 'Sales' in c or '销量' in c), cols[2] if len(cols)>2 else cols[0])
+        guess_img = next((c for c in cols if 'Image' in c or 'Img' in c or 'Pic' in c or '图' in c or 'Cover' in c), None)
 
-    # 数据清洗
+        col_name = st.selectbox("商品标题列", cols, index=cols.index(guess_name))
+        col_price = st.selectbox("价格列", cols, index=cols.index(guess_price))
+        col_sales = st.selectbox("销量列", cols, index=cols.index(guess_sales))
+        col_img = st.selectbox("图片列 (可选)", ["无"] + cols, index=(cols.index(guess_img) + 1) if guess_img else 0)
+    
     main_df = df.copy()
     main_df['Clean_Price'] = main_df[col_price].apply(clean_currency)
     main_df['Clean_Sales'] = main_df[col_sales].apply(clean_currency)
     main_df['GMV'] = main_df['Clean_Price'] * main_df['Clean_Sales']
-    if col_img: main_df['Image_Url'] = main_df[col_img].astype(str)
-    
-    # 全局筛选
-    filtered_df = main_df
+    has_image = col_img != "无"
+    if has_image: main_df['Image_Url'] = main_df[col_img].astype(str)
+
+    # 漏斗筛选
+    min_p, max_p = int(main_df['Clean_Price'].min()), int(main_df['Clean_Price'].max())
+    if min_p == max_p: max_p += 1
+    price_range = st.sidebar.slider("💰 价格区间", min_p, max_p, (min_p, max_p))
+    sales_min = st.sidebar.number_input("🔥 最低销量", min_value=0, value=100)
+    filtered_df = main_df[(main_df['Clean_Price'] >= price_range[0]) & (main_df['Clean_Price'] <= price_range[1]) & (main_df['Clean_Sales'] >= sales_min)]
     max_gmv = filtered_df['GMV'].max() if not filtered_df.empty else 1
 
+    # ==========================================
+    # 4. 主界面
+    # ==========================================
     st.title("✨ TK选品分析青春版")
     
     # 1. 宏观指标
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("总 GMV", f"${filtered_df['GMV'].sum():,.0f}")
-    c2.metric("平均价格", f"${filtered_df['Clean_Price'].mean():.2f}")
-    c3.metric("商品数", len(filtered_df))
-    c4.metric("最高销量", f"{filtered_df['Clean_Sales'].max():,.0f}")
+    m1, m2, m3, m4 = st.columns(4)
+    avg_price = filtered_df['Clean_Price'].mean()
+    m1.metric("筛选池总 GMV", f"${filtered_df['GMV'].sum():,.0f}")
+    m2.metric("平均客单价", f"${avg_price:.2f}")
+    m3.metric("潜力爆款数", len(filtered_df))
+    m4.metric("最高单品销量", f"{filtered_df['Clean_Sales'].max():,.0f}")
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 2. 🔥 Top 3 推荐 (保留好用的旧功能)
-    st.subheader("🔥 今日 Top 3 爆款")
-    top3 = filtered_df.sort_values('GMV', ascending=False).head(3)
-    if len(top3) >= 3:
-        cols_top = st.columns(3)
-        for i, col in enumerate(cols_top):
-            row = top3.iloc[i]
+    # 2. 🔥 Top 3 推荐 (已修复功能)
+    st.subheader("🔥 今日 Top 3 推荐")
+    top_3_df = filtered_df.sort_values('GMV', ascending=False).head(3)
+    if len(top_3_df) >= 3:
+        t1, t2, t3 = st.columns(3)
+        for i, (col, icon) in enumerate(zip([t1, t2, t3], ["🥇", "🥈", "🥉"])):
+            row = top_3_df.iloc[i]
+            img_html = ""
+            if has_image and pd.notna(row['Image_Url']) and row['Image_Url'].startswith('http'):
+                img_html = f'<img src="{row["Image_Url"]}" style="width:100%; height:120px; object-fit:cover; border-radius:8px; margin-bottom:10px;">'
+            
             with col:
-                # 渲染卡片
-                st.markdown(f"""<div class='glass-card' style='text-align:center'>
-                    <div style='font-size:24px; margin-bottom:5px'>{'🥇🥈🥉'[i]}</div>
-                    <div style='color:#5856D6; font-weight:bold; font-size:18px'>${row['GMV']:,.0f}</div>
-                    <div style='color:#666; font-size:12px; margin-bottom:10px'>销量: {row['Clean_Sales']:,.0f}</div>
-                    <div style='height:40px; overflow:hidden; font-size:14px; line-height:1.4'>{str(row[col_name])[:40]}...</div>
-                </div>""", unsafe_allow_html=True)
-                # 按钮在卡片下方
-                if st.button(f"🔍 分析这款", key=f"top_btn_{i}", use_container_width=True):
+                st.markdown(f"""
+                <div class="glass-card" style="text-align: center;">
+                    {img_html}
+                    <h3 style="color:#5856D6 !important; margin:0;">{icon} GMV: ${row['GMV']:,.0f}</h3>
+                    <p style="font-weight: 600; height: 45px; overflow: hidden; margin-top: 10px;">{(row[col_name][:35] + '...')}</p>
+                    <p style="color: #666; font-size: 14px;">售价: ${row['Clean_Price']:.2f}</p>
+                </div>
+                """, unsafe_allow_html=True)
+                if st.button(f"🔍 分析这款", key=f"btn_top_{i}", use_container_width=True):
                     st.session_state.selected_product_title = row[col_name]
                     st.rerun()
-
-    # 3. 柱状图 (可点击)
     st.markdown("<br>", unsafe_allow_html=True)
+
+    # 3. 📊 交互式柱状图 (已修复点击跳转)
     with st.container():
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.subheader("📊 销量排行 (点击柱子跳转)")
-        chart_df = filtered_df.sort_values('Clean_Sales', ascending=False).head(20)
-        chart_df['ShortName'] = chart_df[col_name].apply(lambda x: str(x)[:15] + '..')
-        
-        fig = px.bar(chart_df, x='ShortName', y='Clean_Sales', hover_name=col_name, color='Clean_Price')
-        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=350)
-        
-        # 开启点击事件
-        event = st.plotly_chart(fig, use_container_width=True, on_select="rerun")
-        if event and event['selection']['points']:
-            idx = event['selection']['points'][0]['point_index']
-            clicked_title = chart_df.iloc[idx][col_name]
-            st.session_state.selected_product_title = clicked_title
-            st.rerun() # 立即刷新
+        st.subheader("📊 畅销品销量排行 (点击柱子查看分析)")
+        if not filtered_df.empty:
+            chart_df = filtered_df.sort_values('Clean_Sales', ascending=False).head(50).copy()
+            chart_df['Short_Name'] = chart_df[col_name].astype(str).apply(lambda x: x[:15] + '..' if len(x)>15 else x)
+            
+            fig = px.bar(
+                chart_df, x='Short_Name', y='Clean_Sales', color='Clean_Price',
+                hover_name=col_name, template="plotly_white", color_continuous_scale="Viridis",
+            )
+            fig.update_layout(
+                height=400, margin=dict(l=20,r=20,t=30,b=50), 
+                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                font={'color': '#1D1D1F'}, xaxis_tickangle=-45
+            )
+            # 关键：开启点击事件
+            selected_points = st.plotly_chart(fig, use_container_width=True, on_select="rerun")
+            if selected_points and selected_points['selection']['points']:
+                point_idx = selected_points['selection']['points'][0]['point_index']
+                clicked_product = chart_df.iloc[point_idx][col_name]
+                st.session_state.selected_product_title = clicked_product
         st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
 
     # 4. 商品清单
-    st.subheader("📋 商品清单")
-    selection = st.dataframe(
-        filtered_df[[col_name, 'Clean_Price', 'Clean_Sales', 'GMV']], 
-        use_container_width=True, 
-        on_select="rerun", 
-        selection_mode="single-row"
-    )
+    st.subheader("📋 所有商品清单 (点击行 -> 自动跳转分析室)")
+    display_cols = [col_name, 'Clean_Price', 'Clean_Sales', 'GMV']
+    if has_image: display_cols.insert(0, 'Image_Url')
     
-    # 选中逻辑处理
+    col_config = {
+        col_name: st.column_config.TextColumn("标题", width="medium"),
+        "Clean_Price": st.column_config.NumberColumn("售价", format="$%.2f"),
+        "Clean_Sales": st.column_config.NumberColumn("销量"),
+        "GMV": st.column_config.NumberColumn("GMV", format="$%.0f"),
+    }
+    if has_image: col_config["Image_Url"] = st.column_config.ImageColumn("主图", help="点击放大")
+
+    selection = st.dataframe(
+        filtered_df.sort_values('GMV', ascending=False)[display_cols],
+        column_config=col_config, use_container_width=True, height=400,
+        on_select="rerun", selection_mode="single-row"
+    )
+
+    # 选中逻辑 (兼容图表点击和表格点击)
     current_product = None
     if selection.selection["rows"]:
-        idx = selection.selection["rows"][0]
-        current_product = filtered_df.iloc[idx]
+        current_product = filtered_df.sort_values('GMV', ascending=False).iloc[selection.selection["rows"][0]]
         st.session_state.selected_product_title = current_product[col_name]
     elif st.session_state.selected_product_title:
         match = filtered_df[filtered_df[col_name] == st.session_state.selected_product_title]
         if not match.empty: current_product = match.iloc[0]
 
-    # 5. 🎯 分析室 (核心功能区)
+    # 5. 🎯 单品分析室
     st.markdown("<div id='analysis_target'></div>", unsafe_allow_html=True)
     if current_product is not None:
-        st.markdown("---")
+        st.markdown("<br>", unsafe_allow_html=True)
         score, score_text, score_css = calculate_score(current_product, max_gmv)
-        
-        # 标题栏
         st.markdown(f"""
         <div class="glass-card analysis-room">
-            <h2 style="color: #5856D6; margin:0;">🎯 分析室: {str(current_product[col_name])[:30]}... 
-            <span class="score-badge {score_css}">{score_text}</span></h2>
+            <h2 style="color: #5856D6 !important; margin:0;">🎯 分析室: {current_product[col_name][:30]}... <span class="score-badge {score_css}">{score_text}</span></h2>
         </div><br>
         """, unsafe_allow_html=True)
-
-        c_left, c_mid, c_right = st.columns([1, 1.2, 1.4]) 
+        
+        c_left, c_mid, c_right = st.columns([1, 1.2, 1.2])
         
         with c_left:
-            # 图片区
+            # 图片
             st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-            if col_img and pd.notna(current_product['Image_Url']):
-                st.image(current_product['Image_Url'], use_container_width=True)
+            if has_image and pd.notna(current_product['Image_Url']):
+                st.markdown(f'<img src="{current_product["Image_Url"]}" style="width:100%; border-radius:12px; max-height:250px; object-fit:contain;">', unsafe_allow_html=True)
             else: st.info("暂无图片")
             st.markdown('</div>', unsafe_allow_html=True)
-        
+
         with c_mid:
-            # 💰 利润模拟器 (保留手动输入)
+            # 💰 利润模拟器 (已修复: 恢复可输入计算功能)
             st.markdown('<div class="glass-card">', unsafe_allow_html=True)
             st.subheader("💰 利润模拟器")
-            sell = float(current_product['Clean_Price'])
-            st.metric("零售价 (Price)", f"${sell:.2f}")
+            sell_price = current_product['Clean_Price']
+            st.metric("零售价 (Price)", f"${sell_price:.2f}")
             
-            cost = st.number_input("进货成本 ($)", value=sell*0.3, step=1.0)
-            ship = st.number_input("头程运费 ($)", value=3.0, step=0.5)
-            fee = sell * 0.05
+            cost_price = st.number_input("进货成本 ($)", value=float(sell_price)*0.2, step=1.0)
+            ship_cost = st.number_input("头程运费 ($)", value=3.0, step=0.5)
+            platform_fee = sell_price * 0.05 
             
-            profit = sell - cost - ship - fee
-            margin = (profit/sell)*100 if sell>0 else 0
+            profit = sell_price - cost_price - ship_cost - platform_fee
+            margin = (profit / sell_price) * 100 if sell_price > 0 else 0
             
             st.markdown("---")
-            c1, c2 = st.columns(2)
-            c1.metric("预估净赚", f"${profit:.2f}", delta_color="normal" if profit>0 else "inverse")
-            c2.metric("利润率", f"{margin:.1f}%")
-            st.caption(f"*已扣除 5% 佣金: ${fee:.2f}")
+            c_p1, c_p2 = st.columns(2)
+            c_p1.metric("预估净赚", f"${profit:.2f}", delta_color="normal" if profit>0 else "inverse")
+            c_p2.metric("利润率", f"{margin:.1f}%")
+            st.caption(f"*已扣除约 5% 佣金 (${platform_fee:.2f})")
             st.markdown('</div>', unsafe_allow_html=True)
 
         with c_right:
-            # 🤖 AI 运营助手 (升级版)
+            # 🤖 AI 运营助手 (已修复: 3大功能齐全)
             st.markdown('<div class="glass-card">', unsafe_allow_html=True)
             st.subheader("🤖 AI 运营助手")
             
-            # 选项卡
-            tab1, tab2 = st.tabs(["文案优化", "视频脚本"])
+            tab1, tab2 = st.tabs(["文案优化 (标题&描述)", "视频脚本"])
             
-            # --- Tab 1: 标题 & 描述 ---
+            # === TAB 1: 标题 + 描述 ===
             with tab1:
-                # 1. 基础信息
-                orig_title = str(current_product[col_name])
-                keywords = st.text_input("核心关键词 (Keywords)", placeholder="MustHave, Gift for her")
+                orig_name = st.text_input("原标题", value=str(current_product[col_name]))
+                keywords = st.text_input("关键词", placeholder="MustHave, Gift", key="kw_in")
                 
-                # 功能 1: 生成标题
+                # 功能 1: 标题优化
                 if st.button("🚀 1. 生成爆款标题"):
-                    if active_api_key and keywords:
-                        with st.spinner("Gemini (2.5) 正在思考..."):
-                            prompt = f"""
-                            Act as a TikTok Shop SEO Expert.
-                            Task: Create a viral product title based on the original name and keywords.
-                            Original Name: {orig_title}
-                            Keywords: {keywords}
-                            Requirements: English only, under 100 chars, emotive and catchy.
-                            Output: Just the title.
-                            """
-                            res = get_gemini_response(prompt, active_api_key)
+                    if is_ai_ready and keywords:
+                        with st.spinner("Gemini 优化中..."):
+                            prompt = f"Act as TikTok SEO expert. Optimize title: {orig_name}. Keywords: {keywords}. English only. Under 100 chars."
+                            res = get_gemini_response(prompt)
                             st.session_state['gen_title'] = res.strip()
-                            st.success("标题优化完成")
+                            st.success("优化完成")
                     else:
-                        if not active_api_key: st.warning("⚠️ 未连接 AI，请检查登录模式")
-                        else: st.warning("⚠️ 请输入关键词")
+                        st.session_state['gen_title'] = basic_optimize_title(orig_name)
+                        if not is_ai_ready: st.caption("提示: 普通模式生成")
 
-                # 显示生成的新标题
                 if 'gen_title' in st.session_state:
-                    st.info(f"**新标题:** {st.session_state['gen_title']}")
+                    st.info(f"新标题: {st.session_state['gen_title']}")
                     
+                    # 功能 2: 描述生成 (基于新标题)
                     st.markdown("---")
-                    # 功能 2: 生成描述 (基于新标题)
-                    if st.button("📝 2. 生成300字英文描述"):
-                        if active_api_key:
-                            with st.spinner("Gemini (2.5) 正在撰写..."):
-                                desc_prompt = f"""
-                                Act as a Copywriter. 
-                                Task: Write a 300-word product description for TikTok Shop.
-                                Product: {st.session_state['gen_title']}
-                                Keywords: {keywords}
-                                Tone: Exciting, Persuasive, addressing pain points.
-                                Format: Pure English text, short paragraphs.
-                                """
-                                st.session_state['gen_desc'] = get_gemini_response(desc_prompt, active_api_key)
+                    if st.button("📝 2. 生成300字描述"):
+                        if is_ai_ready and keywords:
+                            with st.spinner("AI 撰写中..."):
+                                d_prompt = f"Write a 300-word product description for {st.session_state['gen_title']}. Keywords: {keywords}. Tone: Exciting. Format: Plain text."
+                                st.session_state['gen_desc'] = get_gemini_response(d_prompt)
                         else:
-                            st.error("请检查 Key 连接")
+                            st.warning("普通模式无法生成长文，请登录管理员或输入Key")
                     
                     if 'gen_desc' in st.session_state:
-                        st.text_area("生成结果:", value=st.session_state['gen_desc'], height=200)
+                        st.text_area("英文描述:", value=st.session_state['gen_desc'], height=150)
 
-            # --- Tab 2: 视频脚本 ---
+            # === TAB 2: 脚本 ===
             with tab2:
                 # 功能 3: 脚本生成
-                st.caption("基于关键词生成 AI 视频提示词")
-                if st.button("🎬 3. 生成脚本提示词"):
-                    target = st.session_state.get('gen_title', orig_title)
-                    if active_api_key and keywords:
-                        with st.spinner("Gemini (2.5) 正在编写剧本..."):
-                            script_prompt = f"""
-                            Act as a Viral Video Director.
-                            Task: Create a video script prompt for AI video generators (like Sora/Runway).
-                            Product: {target}
-                            Keywords: {keywords}
-                            Output Format:
-                            - Visual Style: (e.g. Cinematic, UGC)
-                            - Hook: (First 3 seconds visual)
-                            - Key Scenes: (3-4 bullet points)
-                            - AI Prompt: (Detailed prompt block for generation)
-                            """
-                            script_res = get_gemini_response(script_prompt, active_api_key)
-                            st.text_area("脚本指令:", value=script_res, height=300)
+                if st.button("🎬 3. 生成视频脚本"):
+                    target_name = st.session_state.get('gen_title', orig_name)
+                    if is_ai_ready and keywords:
+                        with st.spinner("AI 编写中..."):
+                            prompt = f"Write a TikTok video script prompt for: {target_name}. Keywords: {keywords}. Include Visual Style, Hook, Scenes."
+                            st.text_area("脚本指令:", value=get_gemini_response(prompt), height=250)
                     else:
-                        st.warning("请确保已有标题/关键词且 Key 已连接")
+                        st.text_area("基础脚本:", value=basic_generate_script(target_name, sell_price), height=150)
+                        if not is_ai_ready: st.caption("提示: 普通模式生成")
 
             st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.info("👈 请点击【上方图表】、【Top3推荐】或【商品清单】中的任意一项，开启深度分析与算账。")
 
 else:
-    st.markdown("""
-    <div class="glass-card" style="text-align: center; padding: 60px;">
-        <h2 style="color: #1D1D1F !important;">👈 请在左侧上传数据表格</h2>
-        <p style="color: #86868b !important; font-size: 18px;">开启您的 iOS 极简风选品之旅</p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown('<div class="glass-card" style="text-align: center; padding: 60px;"><h2>👈 请上传数据表格</h2></div>', unsafe_allow_html=True)
