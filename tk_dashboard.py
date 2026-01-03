@@ -242,7 +242,7 @@ if uploaded_file:
     }
     if has_image: col_config["Image_Url"] = st.column_config.ImageColumn("主图", help="点击放大")
 
-st.subheader("📋 商品清单 (点击选择)")
+    st.subheader("📋 商品清单 (点击选择)")
     selection = st.dataframe(
         filtered_df.sort_values('GMV', ascending=False)[display_cols],
         column_config=col_config, use_container_width=True, height=300,
