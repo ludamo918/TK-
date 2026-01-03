@@ -8,7 +8,7 @@ from openai import OpenAI
 # ==========================================
 # 0. 全局配置
 # ==========================================
-st.set_page_config(page_title="TK选品 (DeepSeek Pro版)", page_icon="🚀", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="TK选品 (Boss直连版)", page_icon="👑", layout="wide", initial_sidebar_state="expanded")
 
 # --- CSS 样式 ---
 st.markdown("""
@@ -22,7 +22,6 @@ st.markdown("""
     .score-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-weight: bold; font-size: 14px; margin-left: 10px; }
     .score-s { background-color: #FFD700; color: #8B4500 !important; } 
     .score-a { background-color: #E5E5EA; color: #333 !important; }
-    /* 优化代码块显示，方便复制 */
     .stCodeBlock { border-radius: 8px !important; }
 </style>
 """, unsafe_allow_html=True)
@@ -30,7 +29,7 @@ st.markdown("""
 # --- 状态管理 ---
 if 'selected_product_title' not in st.session_state: st.session_state.selected_product_title = None
 if 'user_role' not in st.session_state: st.session_state.user_role = 'guest'
-if 'gen_keywords' not in st.session_state: st.session_state.gen_keywords = "" # 新增：存储关键词
+if 'gen_keywords' not in st.session_state: st.session_state.gen_keywords = ""
 if 'gen_title' not in st.session_state: st.session_state.gen_title = ""
 if 'gen_desc' not in st.session_state: st.session_state.gen_desc = ""
 
@@ -50,9 +49,14 @@ def check_password():
             with img_c2: st.image("avatar.png", width=100)
         st.markdown("<h2 style='text-align: center; margin-bottom: 20px;'>🔒 团队登录</h2>", unsafe_allow_html=True)
         pwd = st.text_input("请输入访问密码", type="password", label_visibility="collapsed")
-        if pwd == "1997": 
+        
+        # 密码配置
+        GUEST_PWD = "1997"
+        ADMIN_PWD = "20261888"
+        
+        if pwd == GUEST_PWD: 
             st.session_state.auth = True; st.session_state.user_role = 'guest'; st.rerun()
-        elif pwd == "20261888":
+        elif pwd == ADMIN_PWD:
             st.session_state.auth = True; st.session_state.user_role = 'admin'; st.rerun()
         elif pwd: st.error("🚫 密码错误")
         st.markdown('</div>', unsafe_allow_html=True)
@@ -80,11 +84,10 @@ def calculate_score(row, max_gmv):
     elif score_val >= 5: return "B", "⚖️ 稳健出单 (B级)", "score-a"
     else: return "C", "🌱 起步阶段 (C级)", "score-a"
 
-# 🔥 DeepSeek 流式生成函数 (支持自定义温度)
 def stream_ai_response(client, prompt, placeholder_obj, temp=1.3):
     try:
         stream = client.chat.completions.create(
-            model="deepseek-chat", # 这里使用的是 V3 模型，性价比最高
+            model="deepseek-chat", 
             messages=[{"role": "user", "content": prompt}],
             stream=True,
             temperature=temp 
@@ -107,41 +110,45 @@ def stream_ai_response(client, prompt, placeholder_obj, temp=1.3):
         return err_msg
 
 # ==========================================
-# 2. 侧边栏与 API
+# 2. 侧边栏与 API (Boss 优化版)
 # ==========================================
 if os.path.exists("avatar.png"):
     c1, c2, c3 = st.sidebar.columns([1, 2, 1])
     with c2: st.image("avatar.png", width=110)
-st.sidebar.markdown("<h3 style='text-align: center; margin-top: -10px;'>TK选品 (DeepSeek Pro)</h3>", unsafe_allow_html=True)
+st.sidebar.markdown("<h3 style='text-align: center; margin-top: -10px;'>TK选品 (Boss版)</h3>", unsafe_allow_html=True)
 st.sidebar.markdown("---")
 
 client = None
 active_api_key = None
 is_ai_ready = False
 
-# 管理员自动读 Secrets
+# --- 👑 Boss 逻辑: 自动读取，不显示输入框 ---
 if st.session_state.user_role == 'admin':
-    try:
-        if "DEEPSEEK_API_KEY" in st.secrets:
-            active_api_key = st.secrets["DEEPSEEK_API_KEY"]
-            st.sidebar.success(f"👑 管理员模式: DeepSeek 已激活")
-    except: pass
+    # 尝试从 Secrets 读取
+    if "DEEPSEEK_API_KEY" in st.secrets:
+        active_api_key = st.secrets["DEEPSEEK_API_KEY"]
+        st.sidebar.success(f"👑 Boss 模式: 系统 Key 已接管")
+    else:
+        st.sidebar.error("⚠️ 未检测到系统 Key！")
+        st.sidebar.markdown("""
+        **请在 Streamlit 后台 Secrets 填入:**
+        ```toml
+        DEEPSEEK_API_KEY = "sk-..."
+        ```
+        """)
+# --- 👤 访客逻辑: 必须手动输入 ---
 else:
-    st.sidebar.info("👤 访客模式: 请输入 DeepSeek Key")
+    st.sidebar.info("👤 访客模式: 请输入 Key")
+    with st.sidebar.expander("🔑 API 设置", expanded=True):
+        manual_key = st.text_input("请输入 DeepSeek API Key", type="password")
+        if manual_key: active_api_key = manual_key
 
-with st.sidebar.expander("🔑 API 设置 (访客专用)", expanded=False):
-    manual_key = st.text_input("请输入 DeepSeek API Key", type="password")
-    if manual_key: active_api_key = manual_key
-
-# 🔥 新增：AI 创造力控制
-ai_temp = st.sidebar.slider("🌡️ AI 脑洞/创造力 (Temperature)", 0.5, 1.8, 1.3, step=0.1, help="数值越大越有创意，数值越小越严谨")
+ai_temp = st.sidebar.slider("🌡️ AI 创造力", 0.5, 1.8, 1.3, step=0.1)
 
 if active_api_key:
     try:
         client = OpenAI(api_key=active_api_key, base_url="https://api.deepseek.com")
         is_ai_ready = True
-        if st.session_state.user_role != 'admin':
-            st.sidebar.success("✅ DeepSeek V3 引擎就绪")
     except Exception as e:
         st.sidebar.error(f"Key 错误: {e}")
 
@@ -187,7 +194,7 @@ if uploaded_file:
     # ==========================================
     # 4. 主界面
     # ==========================================
-    st.title("🚀 TK选品分析 (DeepSeek Pro)")
+    st.title("🚀 TK选品分析 (DeepSeek Boss版)")
     
     m1, m2, m3, m4 = st.columns(4)
     avg_price = filtered_df['Clean_Price'].mean()
@@ -218,7 +225,6 @@ if uploaded_file:
                 """, unsafe_allow_html=True)
                 if st.button(f"🔍 分析这款", key=f"btn_top_{i}", use_container_width=True):
                     st.session_state.selected_product_title = row[col_name]
-                    # 清空之前的缓存，保证新产品重新生成
                     st.session_state.gen_keywords = ""
                     st.session_state.gen_title = ""
                     st.session_state.gen_desc = ""
@@ -236,7 +242,7 @@ if uploaded_file:
     }
     if has_image: col_config["Image_Url"] = st.column_config.ImageColumn("主图", help="点击放大")
 
-    st.subheader("📋 商品清单 (点击选择)")
+st.subheader("📋 商品清单 (点击选择)")
     selection = st.dataframe(
         filtered_df.sort_values('GMV', ascending=False)[display_cols],
         column_config=col_config, use_container_width=True, height=300,
@@ -246,7 +252,6 @@ if uploaded_file:
     current_product = None
     if selection.selection["rows"]:
         current_product = filtered_df.sort_values('GMV', ascending=False).iloc[selection.selection["rows"][0]]
-        # 如果切换了产品，清空缓存
         if st.session_state.selected_product_title != current_product[col_name]:
             st.session_state.gen_keywords = ""
             st.session_state.gen_title = ""
@@ -256,7 +261,6 @@ if uploaded_file:
         match = filtered_df[filtered_df[col_name] == st.session_state.selected_product_title]
         if not match.empty: current_product = match.iloc[0]
 
-    # Analysis Room
     st.markdown("<div id='analysis_target'></div>", unsafe_allow_html=True)
     if current_product is not None:
         st.markdown("<br>", unsafe_allow_html=True)
@@ -306,7 +310,6 @@ if uploaded_file:
                         st.session_state.gen_keywords = res
                     else: st.warning("请检查 API Key")
                 
-                # 显示关键词 (代码块格式方便复制)
                 keywords_in = st.text_input("关键词 (可手动修改)", value=st.session_state.gen_keywords, placeholder="点击上方按钮自动生成...")
                 if st.session_state.gen_keywords:
                     st.caption("👇 点击右上角复制按钮：")
@@ -317,7 +320,6 @@ if uploaded_file:
                 # --- 步骤 1: 标题生成 ---
                 if st.button("🚀 1. 生成裂变 SEO 标题"):
                     if is_ai_ready and keywords_in:
-                        # 优化后的 Prompt
                         prompt_title = f"""
                         Act as a TikTok Shop copywriter. Create ONE optimized product title based on: "{orig_name}".
                         Target Keywords: {keywords_in}.
@@ -340,7 +342,6 @@ if uploaded_file:
                 # --- 步骤 2: 描述生成 ---
                 if st.button("📝 2. 生成高转化描述 (不凑字数)"):
                     if is_ai_ready and st.session_state.gen_title:
-                        # 优化后的描述 Prompt - 黄金法则
                         prompt_desc = f"""
                         Write a high-converting TikTok Shop product description for: "{st.session_state.gen_title}".
                         Keywords: {keywords_in}.
