@@ -7,6 +7,16 @@ import random
 import subprocess
 import sys
 
+# ==========================================
+# 🔌 网络修复补丁 (必须放在最前面)
+# ==========================================
+# 强制让 Python 通过你的梯子访问网络
+# ⚠️ 注意：如果你用的是 Clash，端口通常是 7890
+# ⚠️ 注意：如果你用的是 V2Ray/Shadowsocks，端口可能是 10809
+proxy_url = "http://127.0.0.1:7890"  
+os.environ["http_proxy"] = proxy_url
+os.environ["https_proxy"] = proxy_url
+
 # === 🛠️ 强制安装补丁 (专治 ModuleNotFoundError) ===
 try:
     import google.generativeai as genai
@@ -19,13 +29,13 @@ except ImportError:
 # 0. 全局配置
 # ==========================================
 st.set_page_config(
-    page_title="TK选品分析青春版",
+    page_title="TK选品分析青春版 (v2.5)",
     page_icon="✨",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- iOS 极简白昼风 CSS ---
+# --- iOS 极简白昼风 CSS (保留原样) ---
 st.markdown("""
 <style>
     .stApp { background-color: #F5F5F7; color: #1D1D1F; }
@@ -99,7 +109,7 @@ if 'user_role' not in st.session_state:
     st.session_state.user_role = 'guest'
 
 # ==========================================
-# 🔒 团队密码锁 (双重身份版)
+# 🔒 团队密码锁 (双重身份版) - 保留原样
 # ==========================================
 if 'auth' not in st.session_state: st.session_state.auth = False
 
@@ -169,7 +179,9 @@ def basic_generate_script(title, price):
 
 def get_gemini_response(prompt):
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash') 
+        # 🔥 修改点：这里改成了你指定的 'gemini-2.5'
+        # 如果你用的是中转API，确保他们支持这个模型名称
+        model = genai.GenerativeModel('gemini-2.5') 
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
@@ -209,7 +221,7 @@ if active_api_key:
         genai.configure(api_key=active_api_key)
         is_ai_ready = True
         if st.session_state.user_role != 'admin':
-            st.sidebar.success("✅ AI 引擎已就绪 (自定义Key)")
+            st.sidebar.success("✅ AI 引擎已就绪 (v2.5)")
     except Exception as e:
         st.sidebar.error(f"Key 配置失败: {e}")
 
@@ -256,7 +268,7 @@ if uploaded_file:
     # ==========================================
     # 4. 主界面
     # ==========================================
-    st.title("✨ TK选品分析青春版")
+    st.title("✨ TK选品分析青春版 (AI v2.5)")
     
     # 1. 宏观指标
     m1, m2, m3, m4 = st.columns(4)
@@ -267,7 +279,7 @@ if uploaded_file:
     m4.metric("最高单品销量", f"{filtered_df['Clean_Sales'].max():,.0f}")
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 2. 🔥 Top 3 推荐 (已修复功能)
+    # 2. 🔥 Top 3 推荐
     st.subheader("🔥 今日 Top 3 推荐")
     top_3_df = filtered_df.sort_values('GMV', ascending=False).head(3)
     if len(top_3_df) >= 3:
@@ -292,7 +304,7 @@ if uploaded_file:
                     st.rerun()
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 3. 📊 交互式柱状图 (已修复点击跳转)
+    # 3. 📊 交互式柱状图
     with st.container():
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.subheader("📊 畅销品销量排行 (点击柱子查看分析)")
@@ -368,7 +380,7 @@ if uploaded_file:
             st.markdown('</div>', unsafe_allow_html=True)
 
         with c_mid:
-            # 💰 利润模拟器 (已修复: 恢复可输入计算功能)
+            # 💰 利润模拟器 (已修复)
             st.markdown('<div class="glass-card">', unsafe_allow_html=True)
             st.subheader("💰 利润模拟器")
             sell_price = current_product['Clean_Price']
@@ -389,7 +401,7 @@ if uploaded_file:
             st.markdown('</div>', unsafe_allow_html=True)
 
         with c_right:
-            # 🤖 AI 运营助手 (已修复: 3大功能齐全)
+            # 🤖 AI 运营助手
             st.markdown('<div class="glass-card">', unsafe_allow_html=True)
             st.subheader("🤖 AI 运营助手")
             
