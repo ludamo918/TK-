@@ -8,13 +8,12 @@ import subprocess
 import sys
 
 # ==========================================
-# 0. 强制配置：环境、代理、自动安装库
+# 0. 强制配置：网络代理 & 环境补丁
 # ==========================================
-# 1. 强制设置代理 (根据你的实际情况，这里默认写了 7890，如不同请修改)
-# 如果你是 v2rayN 请改为 10809
-if "HTTP_PROXY" not in os.environ:
-    os.environ["HTTP_PROXY"] = "http://127.0.0.1:7890"
-    os.environ["HTTPS_PROXY"] = "http://127.0.0.1:7890"
+# 1. 强制设置代理 (针对你的 7890 端口)
+# 这样设置后，Python 代码就能通过你的 VPN 访问 Google 了
+os.environ["HTTP_PROXY"] = "http://127.0.0.1:7890"
+os.environ["HTTPS_PROXY"] = "http://127.0.0.1:7890"
 
 # 2. 自动安装/检查 Google 库 (防止报错)
 try:
@@ -56,7 +55,7 @@ if 'user_role' not in st.session_state: st.session_state.user_role = 'guest'
 if 'auth' not in st.session_state: st.session_state.auth = False
 
 # ==========================================
-# 🔒 双重账号安全锁 (核心保护)
+# 🔒 双重账号安全锁 (你的核心要求)
 # ==========================================
 def check_password():
     if st.session_state.auth: return True
@@ -70,12 +69,12 @@ def check_password():
         
         # --- 身份验证逻辑 ---
         if pwd == "1997": 
-            # 访客模式：无法自动获取 Key
+            # 访客模式：无法自动获取 Key，保护你的额度
             st.session_state.auth = True
             st.session_state.user_role = 'guest'
             st.rerun()
-        elif pwd == "20261888":
-            # 管理员模式：自动获取 Secrets Key
+        elif pwd == "boss888":
+            # 管理员模式：自动获取 Secrets Key，随便用
             st.session_state.auth = True
             st.session_state.user_role = 'admin'
             st.rerun()
@@ -102,13 +101,19 @@ def calculate_score(row, max_gmv):
     elif val >= 20: return "A", "🚀 潜力热销 (A级)", "score-a"
     else: return "B", "⚖️ 稳健出单 (B级)", "score-a"
 
-# --- Gemini AI 调用核心 ---
+def basic_optimize_title(original_title):
+    return f"🔥 {str(original_title)[:40]}... ✨ #MustHave"
+
+def basic_generate_script(title, price):
+    return f"**[Hook]**: Stop scrolling!\n**[CTA]**: Only ${price}!"
+
+# --- Gemini AI 调用核心 (已升级至 2.5-flash) ---
 def get_gemini_response(prompt, api_key):
     try:
         # 配置 API (使用 REST 协议以兼容代理)
         genai.configure(api_key=api_key, transport='rest')
         
-        # 使用最新的 Flash 模型
+        # ⚠️ 使用你账号支持的最新模型
         model = genai.GenerativeModel('gemini-2.5-flash') 
         
         response = model.generate_content(prompt)
@@ -132,7 +137,7 @@ if is_admin:
     try:
         if "GEMINI_API_KEY" in st.secrets:
             active_api_key = st.secrets["GEMINI_API_KEY"]
-            st.sidebar.success(f"👑 管理员已登录 (Key已自动加载)")
+            st.sidebar.success(f"👑 管理员模式 (Key已加载)")
     except: pass
 else:
     st.sidebar.info("👤 访客模式 (AI需自填Key)")
@@ -144,11 +149,10 @@ with st.sidebar.expander("🔑 API Key 设置", expanded=not active_api_key):
 
 # 显示状态
 if active_api_key:
-    # 简单的验证
     if not is_admin and not manual:
         pass # 访客没填Key
     else:
-        st.sidebar.success("✅ AI 引擎已就绪")
+        st.sidebar.success("✅ AI 引擎已就绪 (2.5-Flash)")
 else:
     st.sidebar.warning("⚠️ 未连接 AI")
 
@@ -191,7 +195,7 @@ if uploaded_file:
     c4.metric("最高销量", f"{filtered_df['Clean_Sales'].max():,.0f}")
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 2. 🔥 Top 3 推荐 (保留旧版好功能)
+    # 2. 🔥 Top 3 推荐 (保留好用的旧功能)
     st.subheader("🔥 今日 Top 3 爆款")
     top3 = filtered_df.sort_values('GMV', ascending=False).head(3)
     if len(top3) >= 3:
@@ -204,7 +208,7 @@ if uploaded_file:
                     <div style='font-size:24px; margin-bottom:5px'>{'🥇🥈🥉'[i]}</div>
                     <div style='color:#5856D6; font-weight:bold; font-size:18px'>${row['GMV']:,.0f}</div>
                     <div style='color:#666; font-size:12px; margin-bottom:10px'>销量: {row['Clean_Sales']:,.0f}</div>
-                    <div style='height:40px; overflow:hidden; font-size:14px; line-height:1.4'>{row[col_name][:40]}...</div>
+                    <div style='height:40px; overflow:hidden; font-size:14px; line-height:1.4'>{str(row[col_name])[:40]}...</div>
                 </div>""", unsafe_allow_html=True)
                 # 按钮在卡片下方
                 if st.button(f"🔍 分析这款", key=f"top_btn_{i}", use_container_width=True):
@@ -264,7 +268,7 @@ if uploaded_file:
         </div><br>
         """, unsafe_allow_html=True)
 
-        c_left, c_mid, c_right = st.columns([1, 1.2, 1.4]) # 调整比例给右侧更多空间
+        c_left, c_mid, c_right = st.columns([1, 1.2, 1.4]) 
         
         with c_left:
             # 图片区
@@ -296,7 +300,7 @@ if uploaded_file:
             st.markdown('</div>', unsafe_allow_html=True)
 
         with c_right:
-            # 🤖 AI 运营助手 (升级版 3大功能)
+            # 🤖 AI 运营助手 (升级版)
             st.markdown('<div class="glass-card">', unsafe_allow_html=True)
             st.subheader("🤖 AI 运营助手")
             
@@ -312,7 +316,7 @@ if uploaded_file:
                 # 功能 1: 生成标题
                 if st.button("🚀 1. 生成爆款标题"):
                     if active_api_key and keywords:
-                        with st.spinner("Gemini 正在思考..."):
+                        with st.spinner("Gemini (2.5) 正在思考..."):
                             prompt = f"""
                             Act as a TikTok Shop SEO Expert.
                             Task: Create a viral product title based on the original name and keywords.
@@ -325,7 +329,8 @@ if uploaded_file:
                             st.session_state['gen_title'] = res.strip()
                             st.success("标题优化完成")
                     else:
-                        st.warning("⚠️ 请输入关键词，并确保 Key 已连接")
+                        if not active_api_key: st.warning("⚠️ 未连接 AI，请检查登录模式")
+                        else: st.warning("⚠️ 请输入关键词")
 
                 # 显示生成的新标题
                 if 'gen_title' in st.session_state:
@@ -335,7 +340,7 @@ if uploaded_file:
                     # 功能 2: 生成描述 (基于新标题)
                     if st.button("📝 2. 生成300字英文描述"):
                         if active_api_key:
-                            with st.spinner("Gemini 正在撰写..."):
+                            with st.spinner("Gemini (2.5) 正在撰写..."):
                                 desc_prompt = f"""
                                 Act as a Copywriter. 
                                 Task: Write a 300-word product description for TikTok Shop.
@@ -358,7 +363,7 @@ if uploaded_file:
                 if st.button("🎬 3. 生成脚本提示词"):
                     target = st.session_state.get('gen_title', orig_title)
                     if active_api_key and keywords:
-                        with st.spinner("正在编写剧本..."):
+                        with st.spinner("Gemini (2.5) 正在编写剧本..."):
                             script_prompt = f"""
                             Act as a Viral Video Director.
                             Task: Create a video script prompt for AI video generators (like Sora/Runway).
