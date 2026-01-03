@@ -4,7 +4,16 @@ import plotly.express as px
 import re
 import os
 import random
-import google.generativeai as genai
+import subprocess
+import sys
+
+# === 🛠️ 强制安装补丁 (专治 ModuleNotFoundError) ===
+try:
+    import google.generativeai as genai
+except ImportError:
+    # 如果找不到库，就强制安装
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "google-generativeai"])
+    import google.generativeai as genai
 
 # ==========================================
 # 0. 全局配置
