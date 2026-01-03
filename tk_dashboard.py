@@ -231,6 +231,32 @@ if uploaded_file:
                     st.rerun()
     st.markdown("<br>", unsafe_allow_html=True)
 
+    # --- 📊 交互式柱状图 (回归版) ---
+    with st.container():
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st.subheader("📊 畅销品销量排行 (点击柱子查看分析)")
+        if not filtered_df.empty:
+            chart_df = filtered_df.sort_values('Clean_Sales', ascending=False).head(50).copy()
+            chart_df['Short_Name'] = chart_df[col_name].astype(str).apply(lambda x: x[:15] + '..' if len(x)>15 else x)
+            
+            fig = px.bar(
+                chart_df, x='Short_Name', y='Clean_Sales', color='Clean_Price',
+                hover_name=col_name, template="plotly_white", color_continuous_scale="Viridis",
+            )
+            fig.update_layout(
+                height=400, margin=dict(l=20,r=20,t=30,b=50), 
+                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                font={'color': '#1D1D1F'}, xaxis_tickangle=-45
+            )
+            # 关键：开启点击事件
+            selected_points = st.plotly_chart(fig, use_container_width=True, on_select="rerun")
+            if selected_points and selected_points['selection']['points']:
+                point_idx = selected_points['selection']['points'][0]['point_index']
+                clicked_product = chart_df.iloc[point_idx][col_name]
+                st.session_state.selected_product_title = clicked_product
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+
     # List
     display_cols = [col_name, 'Clean_Price', 'Clean_Sales', 'GMV']
     if has_image: display_cols.insert(0, 'Image_Url')
