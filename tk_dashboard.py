@@ -45,7 +45,7 @@ st.markdown("""
     /* 4. 侧边栏 */
     section[data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #E5E5EA; }
     
-    /* 5. 按钮美化 (分析按钮改为紫色系，区分于之前的蓝色) */
+    /* 5. 按钮美化 */
     .stButton > button {
         background-color: #5856D6 !important; /* iOS 紫色 */
         color: white !important;
@@ -65,7 +65,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 状态管理：用于在点击Top3时触发分析 ---
+# --- 状态管理 ---
 if 'selected_product_title' not in st.session_state:
     st.session_state.selected_product_title = None
 
@@ -82,7 +82,7 @@ def check_password():
             with img_c2: st.image("avatar.png", width=100)
         st.markdown("<h2 style='text-align: center; margin-bottom: 20px;'>🔒 团队登录</h2>", unsafe_allow_html=True)
         pwd = st.text_input("请输入团队访问密码", type="password", label_visibility="collapsed")
-        if pwd == "888888": 
+        if pwd == "1997": 
             st.session_state.auth = True
             st.rerun()
         elif pwd: st.error("🚫 密码错误")
@@ -121,18 +121,28 @@ if uploaded_file:
     except: st.error("文件格式错误"); st.stop()
 
     cols = list(df.columns)
-    with st.sidebar.expander("🔧 字段校准", expanded=False):
+    with st.sidebar.expander("🔧 字段校准 (含图片列)", expanded=True): # 默认展开方便确认图片列
         guess_name = next((c for c in cols if 'Title' in c or '名称' in c or 'Name' in c), cols[0])
         guess_price = next((c for c in cols if 'Price' in c or '价格' in c), cols[1] if len(cols)>1 else cols[0])
         guess_sales = next((c for c in cols if 'Sales' in c or '销量' in c), cols[2] if len(cols)>2 else cols[0])
+        # 自动猜测图片列
+        guess_img = next((c for c in cols if 'Image' in c or 'Img' in c or 'Pic' in c or '图' in c or 'Cover' in c), None)
+
         col_name = st.selectbox("商品标题列", cols, index=cols.index(guess_name))
         col_price = st.selectbox("价格列 (Price)", cols, index=cols.index(guess_price))
         col_sales = st.selectbox("销量列 (Sales)", cols, index=cols.index(guess_sales))
+        # 新增图片列选择
+        col_img = st.selectbox("图片链接列 (可选)", ["无"] + cols, index=(cols.index(guess_img) + 1) if guess_img else 0)
     
     main_df = df.copy()
     main_df['Clean_Price'] = main_df[col_price].apply(clean_currency)
     main_df['Clean_Sales'] = main_df[col_sales].apply(clean_currency)
     main_df['GMV'] = main_df['Clean_Price'] * main_df['Clean_Sales']
+    
+    # 如果选了图片列，处理一下
+    has_image = col_img != "无"
+    if has_image:
+        main_df['Image_Url'] = main_df[col_img].astype(str)
 
     st.sidebar.subheader("🌪️ 选品漏斗")
     min_p, max_p = int(main_df['Clean_Price'].min()), int(main_df['Clean_Price'].max())
@@ -161,7 +171,7 @@ if uploaded_file:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Top 3 推荐 (点击触发深度分析)
+    # Top 3 推荐
     st.subheader("🔥 今日 Top 3 推荐")
     top_3_df = filtered_df.sort_values('GMV', ascending=False).head(3)
     
@@ -170,46 +180,69 @@ if uploaded_file:
         for i, (col, icon) in enumerate(zip([t1, t2, t3], ["🥇", "🥈", "🥉"])):
             row = top_3_df.iloc[i]
             short_title = (row[col_name][:35] + '...') if len(row[col_name]) > 35 else row[col_name]
+            # 尝试获取图片显示在卡片里
+            img_html = ""
+            if has_image and pd.notna(row['Image_Url']) and row['Image_Url'].startswith('http'):
+                img_html = f'<img src="{row["Image_Url"]}" style="width:100%; height:120px; object-fit:cover; border-radius:8px; margin-bottom:10px;">'
+            
             with col:
                 st.markdown(f"""
                 <div class="glass-card" style="text-align: center;">
+                    {img_html}
                     <h3 style="color:#5856D6 !important; margin:0;">{icon} GMV: ${row['GMV']:,.0f}</h3>
                     <p style="font-weight: 600; height: 45px; overflow: hidden; margin-top: 10px;">{short_title}</p>
                     <p style="color: #666; font-size: 14px;">售价: ${row['Clean_Price']:.2f}</p>
                 </div>
                 """, unsafe_allow_html=True)
-                # 深度分析按钮
                 if st.button(f"🔍 深度分析 {i+1}", key=f"btn_top_{i}", use_container_width=True):
                     st.session_state.selected_product_title = row[col_name]
                     st.rerun()
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 图表区
+    # 图表区 (柱状图替换象限图)
     with st.container():
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         c1, c2 = st.columns([7, 3])
         with c1:
-            st.subheader("🔭 蓝海象限图")
+            st.subheader("📊 畅销品销量排行 (Top 50)")
             if not filtered_df.empty:
-                fig = px.scatter(
-                    filtered_df, x='Clean_Price', y='Clean_Sales', size='GMV', 
-                    color='Clean_Price', hover_name=col_name, log_y=True,
-                    template="plotly_white", color_continuous_scale="Blues"
+                # 准备数据：取 Top 50 销量，按销量排序
+                chart_df = filtered_df.sort_values('Clean_Sales', ascending=False).head(50).copy()
+                # 截断标题防止X轴太乱
+                chart_df['Short_Name'] = chart_df[col_name].astype(str).apply(lambda x: x[:15] + '..' if len(x)>15 else x)
+                
+                fig = px.bar(
+                    chart_df, 
+                    x='Short_Name', 
+                    y='Clean_Sales', 
+                    color='Clean_Price', # 颜色区分价格
+                    hover_name=col_name,
+                    title=None,
+                    template="plotly_white", 
+                    color_continuous_scale="Viridis", # 颜色鲜艳一点
+                    labels={'Clean_Sales': '销量', 'Short_Name': '商品', 'Clean_Price': '售价($)'}
                 )
-                fig.update_layout(height=350, margin=dict(l=20,r=20,t=30,b=20), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font={'color': '#1D1D1F'})
+                fig.update_layout(
+                    height=400, 
+                    margin=dict(l=20,r=20,t=30,b=50), 
+                    plot_bgcolor='rgba(0,0,0,0)', 
+                    paper_bgcolor='rgba(0,0,0,0)', 
+                    font={'color': '#1D1D1F'},
+                    xaxis_tickangle=-45 # X轴标签倾斜
+                )
                 st.plotly_chart(fig, use_container_width=True)
             else: st.warning("暂无数据")
         with c2:
             st.subheader("💡 标题热词云")
             all_titles = " ".join(filtered_df[col_name].astype(str).tolist()).lower()
-            ignore_words = ['for', 'and', 'with', 'the', 'pcs', 'set', 'new', 'hot', 'color', 'size']
+            ignore_words = ['for', 'and', 'with', 'the', 'pcs', 'set', 'new', 'hot', 'color', 'size', 'high']
             words = re.findall(r'\b\w+\b', all_titles)
             clean_words = [w for w in words if w not in ignore_words and len(w)>2 and not w.isdigit()]
             if clean_words:
-                w_df = pd.DataFrame(Counter(clean_words).most_common(8), columns=['Word', 'Count'])
+                w_df = pd.DataFrame(Counter(clean_words).most_common(10), columns=['Word', 'Count'])
                 fig_bar = px.bar(w_df, x='Count', y='Word', orientation='h', color='Count', color_continuous_scale="Purples")
-                fig_bar.update_layout(yaxis={'autorange': 'reversed'}, height=350, margin=dict(l=0,r=0,t=30,b=0), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False, font={'color': '#1D1D1F'})
+                fig_bar.update_layout(yaxis={'autorange': 'reversed'}, height=400, margin=dict(l=0,r=0,t=30,b=0), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False, font={'color': '#1D1D1F'})
                 st.plotly_chart(fig_bar, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -217,72 +250,88 @@ if uploaded_file:
 
     # 列表与交互
     st.subheader("📋 精品清单 (点击表格行查看分析)")
+    
+    # 准备表格数据
+    display_cols = [col_name, 'Clean_Price', 'Clean_Sales', 'GMV']
+    if has_image:
+        display_cols.insert(0, 'Image_Url') # 把图片放第一列
+
     display_df = filtered_df.sort_values('GMV', ascending=False).reset_index(drop=True)
     
+    # 动态构建列配置
+    col_config = {
+        col_name: st.column_config.TextColumn("商品标题", width="medium"),
+        "Clean_Price": st.column_config.NumberColumn("售价($)", format="$%.2f"),
+        "Clean_Sales": st.column_config.NumberColumn("销量", format="%d"),
+        "GMV": st.column_config.NumberColumn("GMV($)", format="$%.0f"),
+    }
+    
+    # 如果有图片，配置图片列
+    if has_image:
+        col_config["Image_Url"] = st.column_config.ImageColumn("主图", help="商品主图预览")
+
     # 表格交互
     selection = st.dataframe(
-        display_df[[col_name, 'Clean_Price', 'Clean_Sales', 'GMV']],
-        column_config={
-            col_name: st.column_config.TextColumn("商品标题", width="large"),
-            "Clean_Price": st.column_config.NumberColumn("售价($)", format="$%.2f"),
-            "Clean_Sales": st.column_config.NumberColumn("销量", format="%d"),
-            "GMV": st.column_config.NumberColumn("GMV($)", format="$%.0f"),
-        },
+        display_df[display_cols],
+        column_config=col_config,
         use_container_width=True,
-        height=350,
+        height=400, # 表格稍微高一点展示图片
         on_select="rerun",
         selection_mode="single-row"
     )
 
-    # 逻辑：表格点击优先，如果没点表格但点了Top3按钮，则用Top3的数据
+    # 逻辑：表格点击优先
     current_product = None
-    
     if selection.selection["rows"]:
         selected_index = selection.selection["rows"][0]
         current_product = display_df.iloc[selected_index]
     elif st.session_state.selected_product_title:
-        # 如果通过Top3按钮选中了
         match = display_df[display_df[col_name] == st.session_state.selected_product_title]
         if not match.empty:
             current_product = match.iloc[0]
 
-    # 深度分析卡片区域 (Dynamic Analysis Room)
+    # 深度分析卡片
     if current_product is not None:
-        # 价格定位分析
         price_diff = current_product['Clean_Price'] - avg_price
         price_status = "🔴 高于均价" if price_diff > 0 else "🟢 低于均价"
         price_pct = abs(price_diff / avg_price) * 100
-        
-        # 标题拆解
         p_words = [w for w in re.findall(r'\b\w+\b', current_product[col_name].lower()) if len(w)>2]
         
+        # 获取大图
+        big_img_html = ""
+        if has_image and pd.notna(current_product['Image_Url']) and current_product['Image_Url'].startswith('http'):
+            big_img_html = f'<div style="flex: 0 0 150px;"><img src="{current_product["Image_Url"]}" style="width:100%; border-radius:12px; border:1px solid #eee;"></div>'
+
         st.markdown(f"""
         <div class="glass-card highlight-card">
             <h2 style="color: #5856D6 !important; margin-top:0;">🎯 单品战术分析室</h2>
-            <h3 style="margin: 10px 0;">{current_product[col_name]}</h3>
-            <hr style="border: 0; border-top: 1px solid #ddd;">
-            <div style="display: flex; justify-content: space-between; flex-wrap: wrap;">
-                <div style="flex: 1; min-width: 200px;">
-                    <p style="font-size: 14px; color: #666;">💰 销售表现</p>
-                    <p style="font-size: 24px; font-weight: bold;">GMV: ${current_product['GMV']:,.0f}</p>
-                    <p>销量: {int(current_product['Clean_Sales'])} 单</p>
-                </div>
-                <div style="flex: 1; min-width: 200px;">
-                    <p style="font-size: 14px; color: #666;">📊 价格定位 (均价 ${avg_price:.2f})</p>
-                    <p style="font-size: 24px; font-weight: bold;">${current_product['Clean_Price']:.2f}</p>
-                    <p>{price_status} {price_pct:.1f}%</p>
-                </div>
-                <div style="flex: 1; min-width: 200px;">
-                    <p style="font-size: 14px; color: #666;">🔑 核心关键词提取</p>
-                    <p style="background: #EFEFF4; padding: 10px; border-radius: 8px;">
-                        {', '.join(p_words[:6])}
-                    </p>
+            <div style="display: flex; gap: 20px; align-items: flex-start;">
+                {big_img_html}
+                <div style="flex: 1;">
+                    <h3 style="margin: 0 0 15px 0;">{current_product[col_name]}</h3>
+                    <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 20px;">
+                        <div>
+                            <p style="font-size: 14px; color: #666; margin:0;">💰 销售表现</p>
+                            <p style="font-size: 24px; font-weight: bold; margin:0;">GMV: ${current_product['GMV']:,.0f}</p>
+                            <p style="margin:0;">销量: {int(current_product['Clean_Sales'])} 单</p>
+                        </div>
+                        <div>
+                            <p style="font-size: 14px; color: #666; margin:0;">📊 价格定位</p>
+                            <p style="font-size: 24px; font-weight: bold; margin:0;">${current_product['Clean_Price']:.2f}</p>
+                            <p style="margin:0;">{price_status} {price_pct:.1f}%</p>
+                        </div>
+                    </div>
                 </div>
             </div>
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+            <p style="font-size: 14px; color: #666;">🔑 核心关键词提取</p>
+            <p style="background: #F2F2F7; padding: 12px; border-radius: 8px; margin:0; font-family: monospace;">
+                {', '.join(p_words[:8])}
+            </p>
         </div>
         """, unsafe_allow_html=True)
     else:
-        st.info("👆 点击上方【Top 3 按钮】或【表格中的某一行】，在此处查看深度单品分析。")
+        st.info("👆 点击上方【Top 3 按钮】或【表格中的图片/行】，在此处查看深度单品分析。")
 
 else:
     st.markdown("""
