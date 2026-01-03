@@ -6,22 +6,19 @@ import os
 from collections import Counter
 
 # ==========================================
-# 0. 全局配置与 iOS 白昼风格
+# 0. 全局配置与 iOS 风格
 # ==========================================
 st.set_page_config(
-    page_title="TK选品分析青春版",
-    page_icon="✨",
+    page_title="TK选品分析青春版 (Pro)",
+    page_icon="🦄", # 换个独角兽图标，代表独特性
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- iOS 极简白昼风 CSS ---
+# --- CSS 美化 (保持 V15 的高颜值) ---
 st.markdown("""
 <style>
-    /* 1. 全局背景 */
     .stApp { background-color: #F5F5F7; color: #1D1D1F; }
-    
-    /* 2. 纯白悬浮卡片 */
     .glass-card, div[data-testid="metric-container"] {
         background-color: #FFFFFF !important;
         border-radius: 18px;
@@ -34,20 +31,14 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0 8px 30px rgba(0,0,0,0.08);
     }
-
-    /* 3. 字体适配 */
     h1, h2, h3, p, span, div {
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Arial, sans-serif !important;
         color: #1D1D1F !important;
     }
     div[data-testid="stMetricValue"] { color: #007AFF !important; }
-    
-    /* 4. 侧边栏 */
     section[data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #E5E5EA; }
-    
-    /* 5. 按钮美化 */
     .stButton > button {
-        background-color: #5856D6 !important; /* iOS 紫色 */
+        background-color: #5856D6 !important;
         color: white !important;
         border-radius: 12px;
         border: none;
@@ -56,11 +47,14 @@ st.markdown("""
         box-shadow: 0 4px 10px rgba(88, 86, 214, 0.2);
     }
     .stButton > button:hover { background-color: #4A48C5 !important; }
+    .highlight-card { border: 2px solid #5856D6 !important; background-color: #FBFBFF !important; }
     
-    /* 6. 选中行高亮 */
-    .highlight-card {
-        border: 2px solid #5856D6 !important;
-        background-color: #FBFBFF !important;
+    /* 新增：利润计算器的样式 */
+    .profit-box {
+        background-color: #F2F2F7;
+        padding: 15px;
+        border-radius: 12px;
+        margin-top: 10px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -104,7 +98,7 @@ def clean_currency(val):
     return 0
 
 # ==========================================
-# 2. 侧边栏
+# 2. 侧边栏配置
 # ==========================================
 if os.path.exists("avatar.png"):
     c1, c2, c3 = st.sidebar.columns([1, 2, 1])
@@ -121,17 +115,15 @@ if uploaded_file:
     except: st.error("文件格式错误"); st.stop()
 
     cols = list(df.columns)
-    with st.sidebar.expander("🔧 字段校准 (含图片列)", expanded=True): # 默认展开方便确认图片列
+    with st.sidebar.expander("🔧 字段校准 (展开设置)", expanded=False):
         guess_name = next((c for c in cols if 'Title' in c or '名称' in c or 'Name' in c), cols[0])
         guess_price = next((c for c in cols if 'Price' in c or '价格' in c), cols[1] if len(cols)>1 else cols[0])
         guess_sales = next((c for c in cols if 'Sales' in c or '销量' in c), cols[2] if len(cols)>2 else cols[0])
-        # 自动猜测图片列
         guess_img = next((c for c in cols if 'Image' in c or 'Img' in c or 'Pic' in c or '图' in c or 'Cover' in c), None)
 
         col_name = st.selectbox("商品标题列", cols, index=cols.index(guess_name))
         col_price = st.selectbox("价格列 (Price)", cols, index=cols.index(guess_price))
         col_sales = st.selectbox("销量列 (Sales)", cols, index=cols.index(guess_sales))
-        # 新增图片列选择
         col_img = st.selectbox("图片链接列 (可选)", ["无"] + cols, index=(cols.index(guess_img) + 1) if guess_img else 0)
     
     main_df = df.copy()
@@ -139,10 +131,8 @@ if uploaded_file:
     main_df['Clean_Sales'] = main_df[col_sales].apply(clean_currency)
     main_df['GMV'] = main_df['Clean_Price'] * main_df['Clean_Sales']
     
-    # 如果选了图片列，处理一下
     has_image = col_img != "无"
-    if has_image:
-        main_df['Image_Url'] = main_df[col_img].astype(str)
+    if has_image: main_df['Image_Url'] = main_df[col_img].astype(str)
 
     st.sidebar.subheader("🌪️ 选品漏斗")
     min_p, max_p = int(main_df['Clean_Price'].min()), int(main_df['Clean_Price'].max())
@@ -159,7 +149,8 @@ if uploaded_file:
     # ==========================================
     # 3. 主界面
     # ==========================================
-    st.title("✨ TK选品分析青春版")
+    st.title("🦄 TK选品分析 (差异化竞争版)")
+    st.caption("🚀 比普通数据网站多想一步：不仅看数据，更看利润与落地。")
 
     # 宏观指标
     m1, m2, m3, m4 = st.columns(4)
@@ -180,7 +171,6 @@ if uploaded_file:
         for i, (col, icon) in enumerate(zip([t1, t2, t3], ["🥇", "🥈", "🥉"])):
             row = top_3_df.iloc[i]
             short_title = (row[col_name][:35] + '...') if len(row[col_name]) > 35 else row[col_name]
-            # 尝试获取图片显示在卡片里
             img_html = ""
             if has_image and pd.notna(row['Image_Url']) and row['Image_Url'].startswith('http'):
                 img_html = f'<img src="{row["Image_Url"]}" style="width:100%; height:120px; object-fit:cover; border-radius:8px; margin-bottom:10px;">'
@@ -200,43 +190,27 @@ if uploaded_file:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 图表区 (柱状图替换象限图)
+    # 图表区
     with st.container():
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         c1, c2 = st.columns([7, 3])
         with c1:
             st.subheader("📊 畅销品销量排行 (Top 50)")
             if not filtered_df.empty:
-                # 准备数据：取 Top 50 销量，按销量排序
                 chart_df = filtered_df.sort_values('Clean_Sales', ascending=False).head(50).copy()
-                # 截断标题防止X轴太乱
                 chart_df['Short_Name'] = chart_df[col_name].astype(str).apply(lambda x: x[:15] + '..' if len(x)>15 else x)
-                
                 fig = px.bar(
-                    chart_df, 
-                    x='Short_Name', 
-                    y='Clean_Sales', 
-                    color='Clean_Price', # 颜色区分价格
-                    hover_name=col_name,
-                    title=None,
-                    template="plotly_white", 
-                    color_continuous_scale="Viridis", # 颜色鲜艳一点
+                    chart_df, x='Short_Name', y='Clean_Sales', color='Clean_Price', 
+                    hover_name=col_name, template="plotly_white", color_continuous_scale="Viridis",
                     labels={'Clean_Sales': '销量', 'Short_Name': '商品', 'Clean_Price': '售价($)'}
                 )
-                fig.update_layout(
-                    height=400, 
-                    margin=dict(l=20,r=20,t=30,b=50), 
-                    plot_bgcolor='rgba(0,0,0,0)', 
-                    paper_bgcolor='rgba(0,0,0,0)', 
-                    font={'color': '#1D1D1F'},
-                    xaxis_tickangle=-45 # X轴标签倾斜
-                )
+                fig.update_layout(height=400, margin=dict(l=20,r=20,t=30,b=50), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font={'color': '#1D1D1F'}, xaxis_tickangle=-45)
                 st.plotly_chart(fig, use_container_width=True)
             else: st.warning("暂无数据")
         with c2:
             st.subheader("💡 标题热词云")
             all_titles = " ".join(filtered_df[col_name].astype(str).tolist()).lower()
-            ignore_words = ['for', 'and', 'with', 'the', 'pcs', 'set', 'new', 'hot', 'color', 'size', 'high']
+            ignore_words = ['for', 'and', 'with', 'the', 'pcs', 'set', 'new', 'hot', 'color', 'size', 'high', 'women']
             words = re.findall(r'\b\w+\b', all_titles)
             clean_words = [w for w in words if w not in ignore_words and len(w)>2 and not w.isdigit()]
             if clean_words:
@@ -249,55 +223,45 @@ if uploaded_file:
     st.markdown("<br>", unsafe_allow_html=True)
 
     # 列表与交互
-    st.subheader("📋 精品清单 (点击表格行查看分析)")
-    
-    # 准备表格数据
+    st.subheader("📋 精品清单")
     display_cols = [col_name, 'Clean_Price', 'Clean_Sales', 'GMV']
-    if has_image:
-        display_cols.insert(0, 'Image_Url') # 把图片放第一列
-
+    if has_image: display_cols.insert(0, 'Image_Url')
     display_df = filtered_df.sort_values('GMV', ascending=False).reset_index(drop=True)
     
-    # 动态构建列配置
     col_config = {
         col_name: st.column_config.TextColumn("商品标题", width="medium"),
         "Clean_Price": st.column_config.NumberColumn("售价($)", format="$%.2f"),
         "Clean_Sales": st.column_config.NumberColumn("销量", format="%d"),
         "GMV": st.column_config.NumberColumn("GMV($)", format="$%.0f"),
     }
-    
-    # 如果有图片，配置图片列
-    if has_image:
-        col_config["Image_Url"] = st.column_config.ImageColumn("主图", help="商品主图预览")
+    if has_image: col_config["Image_Url"] = st.column_config.ImageColumn("主图")
 
-    # 表格交互
     selection = st.dataframe(
-        display_df[display_cols],
-        column_config=col_config,
-        use_container_width=True,
-        height=400, # 表格稍微高一点展示图片
-        on_select="rerun",
-        selection_mode="single-row"
+        display_df[display_cols], column_config=col_config,
+        use_container_width=True, height=400, on_select="rerun", selection_mode="single-row"
     )
 
-    # 逻辑：表格点击优先
+    # 选品逻辑
     current_product = None
     if selection.selection["rows"]:
         selected_index = selection.selection["rows"][0]
         current_product = display_df.iloc[selected_index]
     elif st.session_state.selected_product_title:
         match = display_df[display_df[col_name] == st.session_state.selected_product_title]
-        if not match.empty:
-            current_product = match.iloc[0]
+        if not match.empty: current_product = match.iloc[0]
 
-    # 深度分析卡片
+    # --- 差异化核心：单品战术分析室 ---
     if current_product is not None:
-        price_diff = current_product['Clean_Price'] - avg_price
-        price_status = "🔴 高于均价" if price_diff > 0 else "🟢 低于均价"
-        price_pct = abs(price_diff / avg_price) * 100
+        price = current_product['Clean_Price']
         p_words = [w for w in re.findall(r'\b\w+\b', current_product[col_name].lower()) if len(w)>2]
         
-        # 获取大图
+        # 1. 蓝海雷达计算
+        # 逻辑：如果(销量/价格)比值很高，说明需求大；这里简单模拟一个“机会分”
+        opportunity_score = min(100, int((current_product['Clean_Sales'] / (price + 1)) * 0.5))
+        if opportunity_score > 80: radar_label = "🌊 超级蓝海 (闭眼冲)"
+        elif opportunity_score > 50: radar_label = "🛶 稳健增长 (可跟卖)"
+        else: radar_label = "🔥 红海血战 (需谨慎)"
+
         big_img_html = ""
         if has_image and pd.notna(current_product['Image_Url']) and current_product['Image_Url'].startswith('http'):
             big_img_html = f'<div style="flex: 0 0 150px;"><img src="{current_product["Image_Url"]}" style="width:100%; border-radius:12px; border:1px solid #eee;"></div>'
@@ -308,31 +272,75 @@ if uploaded_file:
             <div style="display: flex; gap: 20px; align-items: flex-start;">
                 {big_img_html}
                 <div style="flex: 1;">
-                    <h3 style="margin: 0 0 15px 0;">{current_product[col_name]}</h3>
-                    <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 20px;">
-                        <div>
-                            <p style="font-size: 14px; color: #666; margin:0;">💰 销售表现</p>
-                            <p style="font-size: 24px; font-weight: bold; margin:0;">GMV: ${current_product['GMV']:,.0f}</p>
-                            <p style="margin:0;">销量: {int(current_product['Clean_Sales'])} 单</p>
-                        </div>
-                        <div>
-                            <p style="font-size: 14px; color: #666; margin:0;">📊 价格定位</p>
-                            <p style="font-size: 24px; font-weight: bold; margin:0;">${current_product['Clean_Price']:.2f}</p>
-                            <p style="margin:0;">{price_status} {price_pct:.1f}%</p>
-                        </div>
+                    <h3 style="margin: 0 0 10px 0;">{current_product[col_name]}</h3>
+                    <div style="margin-bottom: 10px;">
+                        <span style="background: #E5E5EA; color: #333; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: bold;">{radar_label}</span>
+                        <span style="background: #FFD60A; color: #333; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: bold; margin-left: 10px;">机会分: {opportunity_score}</span>
                     </div>
                 </div>
             </div>
-            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-            <p style="font-size: 14px; color: #666;">🔑 核心关键词提取</p>
-            <p style="background: #F2F2F7; padding: 12px; border-radius: 8px; margin:0; font-family: monospace;">
-                {', '.join(p_words[:8])}
-            </p>
-        </div>
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 15px 0;">
         """, unsafe_allow_html=True)
+
+        # 2. 交互式利润计算器 (Profit Hacker)
+        c_calc, c_ai = st.columns([1, 1])
+        
+        with c_calc:
+            st.markdown("#### 💰 利润模拟器 (Profit Simulator)")
+            st.caption("拖动滑块，算算你这一单到底赚多少？")
+            
+            # 模拟输入
+            cost_cny = st.slider("1. 1688 采购价 (¥)", 0.0, float(price)*7*0.8, float(price)*7*0.2)
+            ship_usd = st.slider("2. 头程运费 ($)", 0.0, 10.0, 3.0)
+            ads_roas = st.slider("3. 预期投流 ROAS", 1.0, 10.0, 3.0)
+            
+            # 实时计算
+            exchange_rate = 7.2
+            cost_usd = cost_cny / exchange_rate
+            platform_fee = price * 0.05 # 假设5%佣金
+            ads_cost = price / ads_roas if ads_roas > 0 else 0
+            
+            net_profit = price - cost_usd - ship_usd - platform_fee - ads_cost
+            margin = (net_profit / price) * 100 if price > 0 else 0
+            
+            # 结果展示
+            if net_profit > 0:
+                color = "#34C759" # Green
+                res_text = f"✅ 预估净赚: ${net_profit:.2f} ({margin:.1f}%)"
+            else:
+                color = "#FF3B30" # Red
+                res_text = f"🛑 预估亏损: ${net_profit:.2f} ({margin:.1f}%)"
+            
+            st.markdown(f"""
+            <div style="background-color: {color}20; padding: 15px; border-radius: 10px; border: 1px solid {color};">
+                <h3 style="color: {color} !important; margin:0; text-align: center;">{res_text}</h3>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # 3. AI 脚本生成器 (AI Prompt)
+        with c_ai:
+            st.markdown("#### 🧠 AI 爆款脚本生成 (Prompt)")
+            st.caption("一键复制下方指令给 ChatGPT，生成视频脚本：")
+            
+            keywords = ', '.join(p_words[:5])
+            prompt_text = f"""
+Act as a TikTok E-commerce Expert. 
+Product: "{current_product[col_name]}"
+Keywords: {keywords}
+Price: ${price}
+
+Task: Write 3 viral TikTok video hooks and a short script structure for this product. 
+Target Audience: Young US buyers.
+Tone: User-generated content (UGC), authentic, emotional.
+Length: 15-30 seconds.
+            """
+            st.code(prompt_text, language="text")
+            st.info("👆 点击右上角复制，发送给 AI 即可生成脚本。")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
     else:
         st.info("👆 点击上方【Top 3 按钮】或【表格中的图片/行】，在此处查看深度单品分析。")
-
 else:
     st.markdown("""
     <div class="glass-card" style="text-align: center; padding: 60px;">
